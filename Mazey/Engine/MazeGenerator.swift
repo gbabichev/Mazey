@@ -13,30 +13,38 @@ nonisolated enum MazeGenerator {
     /// How many candidates to try before settling for the best one found.
     static let maximumAttempts = 60
 
-    /// Generates a maze for a difficulty level, retrying with derived seeds
-    /// until the difficulty criteria are met. Deterministic for a given seed.
+    /// Generates a square maze for a difficulty level (used when there is no screen to fit).
     static func generate(difficulty: MazeDifficulty, seed: UInt64) -> Maze {
+        generate(difficulty: difficulty, seed: seed, rows: difficulty.defaultSize, columns: difficulty.defaultSize)
+    }
+
+    /// Generates a maze of the given shape for a difficulty level, retrying with derived seeds
+    /// until the difficulty criteria are met. Deterministic for a given seed and shape.
+    static func generate(difficulty: MazeDifficulty, seed: UInt64, rows: Int, columns: Int) -> Maze {
+        let criteria = difficulty.criteria(rows: rows, columns: columns)
         var best: (maze: Maze, length: Int)?
         for attempt in 0..<maximumAttempts {
             let attemptSeed = seed &+ UInt64(attempt) &* 0xD1B5_4A32_D192_ED03
-            let maze = generate(rows: difficulty.size, columns: difficulty.size, seed: attemptSeed)
+            let maze = generate(rows: rows, columns: columns, seed: attemptSeed, twistiness: difficulty.twistiness)
             guard let metrics = MazeSolver.metrics(for: maze) else { continue }
-            if difficulty.criteria.isSatisfied(by: metrics) { return maze }
+            if criteria.isSatisfied(by: metrics) { return maze }
             if metrics.solutionLength > (best?.length ?? 0) {
                 best = (maze, metrics.solutionLength)
             }
         }
-        return best?.maze ?? generate(rows: difficulty.size, columns: difficulty.size, seed: seed)
+        return best?.maze ?? generate(rows: rows, columns: columns, seed: seed, twistiness: difficulty.twistiness)
     }
 
     /// Generates a single maze. Pass `start` / `finish` to choose the entrance and exit;
     /// otherwise two distant cells on the outer edge are picked from the seed.
+    /// `twistiness` (0...1) is how much the carving prefers turning to carrying straight on.
     static func generate(
         rows: Int,
         columns: Int,
         seed: UInt64,
         start: GridPoint? = nil,
-        finish: GridPoint? = nil
+        finish: GridPoint? = nil,
+        twistiness: Double = 0.5
     ) -> Maze {
         let rows = max(1, rows)
         let columns = max(1, columns)
@@ -56,21 +64,23 @@ nonisolated enum MazeGenerator {
             finishSide: edgeSide(of: finishPoint, rows: rows, columns: columns, using: &rng),
             seed: seed
         )
-        carve(&maze, using: &rng)
+        carve(&maze, twistiness: twistiness, using: &rng)
         return maze
     }
 
     // MARK: - Carving
 
     /// Iterative depth-first search: walk to a random unvisited neighbour, knocking
-    /// down the wall as we go, and backtrack along the stack when stuck.
-    private static func carve(_ maze: inout Maze, using rng: inout SeededGenerator) {
+    /// down the wall as we go, and backtrack along the stack when stuck. When it could carry
+    /// straight on or turn, `twistiness` is the chance it turns.
+    private static func carve(_ maze: inout Maze, twistiness: Double, using rng: inout SeededGenerator) {
         var visited = Array(repeating: false, count: maze.cellCount)
         let first = GridPoint(row: rng.next(below: maze.rows), column: rng.next(below: maze.columns))
         visited[maze.index(of: first)] = true
-        var stack = [first]
+        var stack: [(point: GridPoint, arrivedBy: MazeDirection?)] = [(first, nil)]
+        let turnChance = Int((min(max(twistiness, 0), 1) * 1000).rounded())
 
-        while let current = stack.last {
+        while let (current, arrivedBy) = stack.last {
             let options = MazeDirection.allCases.filter { direction in
                 let next = current.moved(direction)
                 return maze.contains(next) && !visited[maze.index(of: next)]
@@ -79,11 +89,21 @@ nonisolated enum MazeGenerator {
                 stack.removeLast()
                 continue
             }
-            let direction = options[rng.next(below: options.count)]
+            let direction: MazeDirection
+            if let arrivedBy, options.count > 1, options.contains(arrivedBy) {
+                if rng.next(below: 1000) < turnChance {
+                    let turns = options.filter { $0 != arrivedBy }
+                    direction = turns[rng.next(below: turns.count)]
+                } else {
+                    direction = arrivedBy
+                }
+            } else {
+                direction = options[rng.next(below: options.count)]
+            }
             let next = current.moved(direction)
             maze.openPassage(from: current, direction)
             visited[maze.index(of: next)] = true
-            stack.append(next)
+            stack.append((next, direction))
         }
     }
 

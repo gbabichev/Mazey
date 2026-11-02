@@ -21,11 +21,17 @@ nonisolated struct MazeLayout: Sendable {
 
     /// Fits the whole grid inside `size`, centered, with square cells.
     init(maze: Maze, in size: CGSize) {
-        rows = maze.rows
-        columns = maze.columns
+        self.init(rows: maze.rows, columns: maze.columns, in: size, startSide: maze.startSide, finishSide: maze.finishSide)
+    }
+
+    /// The same fit for a grid that has not been generated yet. `startSide` and `finishSide`
+    /// say which sides will carry a label.
+    init(rows: Int, columns: Int, in size: CGSize, startSide: MazeDirection?, finishSide: MazeDirection?) {
+        self.rows = rows
+        self.columns = columns
         var margins: [MazeDirection: CGFloat] = [:]
         for direction in MazeDirection.allCases {
-            let hasLabel = maze.startSide == direction || maze.finishSide == direction
+            let hasLabel = startSide == direction || finishSide == direction
             margins[direction] = hasLabel ? Self.labelMargin : Self.baseMargin
         }
         self.margins = margins

@@ -11,6 +11,8 @@ nonisolated struct MazeMetrics: Equatable, Sendable {
     var solutionLength: Int
     /// Cells on the shortest route that offer a choice (three or more open sides).
     var decisionPoints: Int
+    /// Times the shortest route changes direction.
+    var turns: Int
 }
 
 /// Minimum requirements a generated maze must meet to be accepted.
@@ -29,13 +31,28 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// Grid is `size` × `size`.
-    var size: Int {
+    /// Roughly how many cells the grid has. The rows and columns are chosen to fit the
+    /// screen, so the shape varies but the amount of maze stays about the same.
+    var cellCount: Int {
         switch self {
-        case .beginner: 4
-        case .easy: 6
-        case .medium: 9
-        case .hard: 12
+        case .beginner: 16
+        case .easy: 36
+        case .medium: 81
+        case .hard: 144
+        }
+    }
+
+    /// The square grid used when there is no screen to fit (tests, previews).
+    var defaultSize: Int { Int(Double(cellCount).squareRoot().rounded()) }
+
+    /// How much the generator prefers turning over carving straight on, from 0 (long straight
+    /// corridors) to 1 (turns whenever possible). Harder levels wind more.
+    var twistiness: Double {
+        switch self {
+        case .beginner: 0.3
+        case .easy: 0.45
+        case .medium: 0.6
+        case .hard: 0.75
         }
     }
 
@@ -58,12 +75,20 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var criteria: MazeCriteria {
+    /// What a generated maze must meet. Scaled by the grid's size and shape, not fixed numbers,
+    /// so a long thin grid counts as the level it says.
+    func criteria(rows: Int, columns: Int) -> MazeCriteria {
+        let routeFactor: Double
+        let decisionRate: Double
         switch self {
-        case .beginner: MazeCriteria(minimumSolutionLength: 7, minimumDecisionPoints: 0)
-        case .easy: MazeCriteria(minimumSolutionLength: 12, minimumDecisionPoints: 1)
-        case .medium: MazeCriteria(minimumSolutionLength: 20, minimumDecisionPoints: 3)
-        case .hard: MazeCriteria(minimumSolutionLength: 32, minimumDecisionPoints: 5)
+        case .beginner: (routeFactor, decisionRate) = (0.9, 0)
+        case .easy: (routeFactor, decisionRate) = (1.0, 0.03)
+        case .medium: (routeFactor, decisionRate) = (1.1, 0.035)
+        case .hard: (routeFactor, decisionRate) = (1.25, 0.035)
         }
+        return MazeCriteria(
+            minimumSolutionLength: Int(Double(rows + columns) * routeFactor),
+            minimumDecisionPoints: Int(Double(rows * columns) * decisionRate)
+        )
     }
 }

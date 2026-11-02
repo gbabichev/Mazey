@@ -95,7 +95,13 @@ nonisolated enum MazeSolver {
     static func metrics(for maze: Maze) -> MazeMetrics? {
         guard let route = solve(maze, from: maze.start) else { return nil }
         let decisions = route.filter { maze.openNeighbors(of: $0).count >= 3 }.count
-        return MazeMetrics(solutionLength: route.count, decisionPoints: decisions)
+        var turns = 0
+        for index in 2..<max(2, route.count) {
+            let before = (route[index - 1].row - route[index - 2].row, route[index - 1].column - route[index - 2].column)
+            let after = (route[index].row - route[index - 1].row, route[index].column - route[index - 1].column)
+            if before != after { turns += 1 }
+        }
+        return MazeMetrics(solutionLength: route.count, decisionPoints: decisions, turns: turns)
     }
 
     /// The cells a hint should highlight, starting at the player's current cell.

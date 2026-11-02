@@ -89,71 +89,66 @@ struct MazeGameView: View {
     }
 
     private var mazeArea: some View {
-        GeometryReader { geometry in
-            let frame = mazeFrame(in: geometry)
-            let layout = MazeLayout(maze: session.maze, in: frame.size)
-            MazeCanvas(
-                maze: session.maze,
-                route: session.path.cells,
-                hint: session.hintCells,
-                hintLevel: session.hintLevel,
-                theme: session.theme
-            )
-            .frame(width: frame.width, height: frame.height)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let current = layout.cellCoordinate(for: value.location)
-                        let previous = lastDragLocation ?? current
-                        session.drag(from: previous, to: current)
-                        lastDragLocation = current
+        let clearance = toolbarClearance
+        return GeometryReader { geometry in
+            // Nothing is drawn until the screen has reported its space, so a maze in the wrong
+            // shape never flashes up.
+            if let space = session.space {
+                let frame = MazeFitter.frame(for: session.maze, in: space)
+                let layout = MazeLayout(maze: session.maze, in: frame.size)
+                MazeCanvas(
+                    maze: session.maze,
+                    route: session.path.cells,
+                    hint: session.hintCells,
+                    hintLevel: session.hintLevel,
+                    theme: session.theme
+                )
+                .frame(width: frame.width, height: frame.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let current = layout.cellCoordinate(for: value.location)
+                            let previous = lastDragLocation ?? current
+                            session.drag(from: previous, to: current)
+                            lastDragLocation = current
+                        }
+                        .onEnded { _ in
+                            lastDragLocation = nil
+                            session.endDrag()
+                        }
+                )
+                .overlay {
+                    if session.isComplete {
+                        CelebrationView(theme: session.theme) {
+                            withAnimation { session.newMaze() }
+                        }
+                        .transition(.scale.combined(with: .opacity))
                     }
-                    .onEnded { _ in
-                        lastDragLocation = nil
-                        session.endDrag()
-                    }
-            )
-            .overlay {
-                if session.isComplete {
-                    CelebrationView(theme: session.theme) {
-                        withAnimation { session.newMaze() }
-                    }
-                    .transition(.scale.combined(with: .opacity))
                 }
+                .animation(.spring(duration: 0.5), value: session.isComplete)
+                .offset(x: frame.minX, y: frame.minY)
             }
-            .animation(.spring(duration: 0.5), value: session.isComplete)
-            .offset(y: frame.minY)
+        }
+        .onGeometryChange(for: MazeSpace.self) { proxy in
+            #if os(iOS)
+            let top = proxy.safeAreaInsets.top
+            #else
+            let top: CGFloat = 0
+            #endif
+            return MazeSpace(size: proxy.size, topInset: top, sideClearance: clearance)
+        } action: { space in
+            session.updateSpace(space)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
     }
 
-    /// Side space the maze must keep free before it may extend under the top bar, so it never
-    /// sits under toolbar buttons. Wide (regular) windows also show status bar text such as
-    /// the date and app name along the top edge, which needs more room.
+    /// Side space the maze must keep free when it extends under the top bar, so it never sits
+    /// under toolbar buttons. Wide (regular) windows also show status bar text such as the
+    /// date and app name along the top edge, which needs more room.
     private var toolbarClearance: CGFloat {
-        horizontalSizeClass == .regular ? 240 : 100
-    }
-
-    /// The area the maze may use. It always respects the safe area, except that when the
-    /// screen is wide enough for the maze to stay clear of the toolbar items on both sides
-    /// (landscape iPad, iPhone, iPhone Duo), it may extend up under the empty top bar.
-    private func mazeFrame(in geometry: GeometryProxy) -> CGRect {
-        let size = geometry.size
-        #if os(iOS)
-        let top = geometry.safeAreaInsets.top
-        let extended = CGSize(width: size.width, height: size.height + top)
-        let full = MazeLayout(maze: session.maze, in: extended)
-        let content = full.contentRect
-        let sideSpace = min(content.minX, size.width - content.maxX)
-        if sideSpace >= toolbarClearance {
-            return CGRect(x: 0, y: -top, width: size.width, height: size.height + top)
-        }
-        return CGRect(origin: .zero, size: size)
-        #else
-        return CGRect(origin: .zero, size: size)
-        #endif
+        horizontalSizeClass == .regular ? 240 : 200
     }
 
     private func direction(for key: KeyEquivalent) -> MazeDirection? {

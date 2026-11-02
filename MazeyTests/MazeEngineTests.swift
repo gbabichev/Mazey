@@ -21,10 +21,11 @@ struct MazeEngineTests {
         }
     }
 
-    @Test func difficultiesUseTheirGridSize() {
+    @Test func defaultGridIsSquareWithTheTargetCellCount() {
         for difficulty in MazeDifficulty.allCases {
             let maze = MazeGenerator.generate(difficulty: difficulty, seed: 7)
-            #expect(maze.rows == difficulty.size && maze.columns == difficulty.size)
+            #expect(maze.rows == maze.columns)
+            #expect(maze.cellCount == difficulty.cellCount)
         }
     }
 
@@ -108,7 +109,8 @@ struct MazeEngineTests {
             var met = 0
             for seed in 0..<50 as Range<UInt64> {
                 let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
-                if let metrics = MazeSolver.metrics(for: maze), difficulty.criteria.isSatisfied(by: metrics) { met += 1 }
+                let criteria = difficulty.criteria(rows: maze.rows, columns: maze.columns)
+                if let metrics = MazeSolver.metrics(for: maze), criteria.isSatisfied(by: metrics) { met += 1 }
             }
             #expect(met >= 45, "\(difficulty) met criteria only \(met)/50 times")
         }
@@ -260,6 +262,152 @@ struct MazeEngineTests {
         let before = session.path
         for _ in 0..<5 { session.requestHint() }
         #expect(session.path == before)
+    }
+
+    // MARK: - Dynamic grids
+
+    private let spaces: [CGSize] = [
+        CGSize(width: 366, height: 640),   // phone, portrait
+        CGSize(width: 800, height: 300),   // phone, landscape
+        CGSize(width: 800, height: 1000),  // tablet, portrait
+        CGSize(width: 1180, height: 760),  // tablet, landscape
+        CGSize(width: 300, height: 300),   // small square window
+        CGSize(width: 420, height: 880),   // narrow tall (folded)
+        CGSize(width: 1000, height: 400),  // wide short
+    ]
+
+    @Test func fittedShapeKeepsTheCellCountNearTheTarget() {
+        for size in spaces {
+            for difficulty in MazeDifficulty.allCases {
+                let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: MazeSpace(size: size))
+                let count = Double(shape.rows * shape.columns)
+                #expect(abs(count - Double(difficulty.cellCount)) / Double(difficulty.cellCount) <= 0.25,
+                        "\(difficulty) in \(size): \(shape)")
+                #expect(shape.rows >= 3 && shape.columns >= 3)
+            }
+        }
+    }
+
+    @Test func fittedShapeFollowsTheScreensOrientation() {
+        for difficulty in MazeDifficulty.allCases {
+            let wide = MazeFitter.shape(cellCount: difficulty.cellCount, in: MazeSpace(size: CGSize(width: 900, height: 400)))
+            let tall = MazeFitter.shape(cellCount: difficulty.cellCount, in: MazeSpace(size: CGSize(width: 400, height: 900)))
+            #expect(wide.columns > wide.rows, "\(difficulty) wide: \(wide)")
+            #expect(tall.rows > tall.columns, "\(difficulty) tall: \(tall)")
+        }
+    }
+
+    @Test func fittedShapeFillsTheSpaceBetterThanASquare() {
+        for size in spaces {
+            for difficulty in MazeDifficulty.allCases {
+                let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: MazeSpace(size: size))
+                let fitted = MazeLayout(rows: shape.rows, columns: shape.columns, in: size, startSide: .right, finishSide: .down).cellSize
+                let side = difficulty.defaultSize
+                let square = MazeLayout(rows: side, columns: side, in: size, startSide: .right, finishSide: .down).cellSize
+                #expect(fitted >= square * 0.999, "\(difficulty) in \(size)")
+            }
+        }
+    }
+
+    @Test func extendingUnderTheTopBarOnlyHappensWhenItHelps() {
+        let maze = MazeGenerator.generate(rows: 5, columns: 5, seed: 1)
+        // No top inset: always the plain area.
+        #expect(MazeFitter.frame(for: maze, in: MazeSpace(size: CGSize(width: 600, height: 400))).origin == .zero)
+        // A wide, short space with a tall top inset: the taller (narrower) frame wins.
+        let wide = MazeSpace(size: CGSize(width: 900, height: 300), topInset: 80, sideClearance: 100)
+        let frame = MazeFitter.frame(for: maze, in: wide)
+        #expect(frame.minY == -80 && frame.minX == 100)
+        // A tall space: the narrower frame would not make the cells bigger.
+        let tall = MazeSpace(size: CGSize(width: 300, height: 900), topInset: 40, sideClearance: 100)
+        #expect(MazeFitter.frame(for: maze, in: tall).origin == .zero)
+    }
+
+    @Test func mazesOfEveryFittedShapeAreSolvableAndMeetTheirCriteria() {
+        for size in spaces {
+            for difficulty in MazeDifficulty.allCases {
+                let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: MazeSpace(size: size))
+                var met = 0
+                for seed in 0..<20 as Range<UInt64> {
+                    let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed, rows: shape.rows, columns: shape.columns)
+                    #expect(maze.rows == shape.rows && maze.columns == shape.columns)
+                    #expect(MazeSolver.isSolvable(maze))
+                    let criteria = difficulty.criteria(rows: shape.rows, columns: shape.columns)
+                    if let metrics = MazeSolver.metrics(for: maze), criteria.isSatisfied(by: metrics) { met += 1 }
+                }
+                #expect(met >= 17, "\(difficulty) \(shape) met criteria \(met)/20")
+            }
+        }
+    }
+
+    @Test func criteriaScaleWithTheGrid() {
+        for difficulty in MazeDifficulty.allCases {
+            let small = difficulty.criteria(rows: 4, columns: 4)
+            let large = difficulty.criteria(rows: 12, columns: 12)
+            #expect(large.minimumSolutionLength > small.minimumSolutionLength)
+            #expect(large.minimumDecisionPoints >= small.minimumDecisionPoints)
+        }
+        #expect(MazeDifficulty.hard.criteria(rows: 10, columns: 10).minimumSolutionLength
+                > MazeDifficulty.beginner.criteria(rows: 10, columns: 10).minimumSolutionLength)
+    }
+
+    @Test func higherTwistinessMakesMoreTurns() {
+        func averageTurnRate(_ twistiness: Double) -> Double {
+            var total = 0.0
+            for seed in 0..<100 as Range<UInt64> {
+                let maze = MazeGenerator.generate(rows: 10, columns: 10, seed: seed, twistiness: twistiness)
+                let metrics = MazeSolver.metrics(for: maze)!
+                total += Double(metrics.turns) / Double(metrics.solutionLength)
+            }
+            return total / 100
+        }
+        let straight = averageTurnRate(0.1)
+        let middle = averageTurnRate(0.5)
+        let twisty = averageTurnRate(0.9)
+        #expect(straight < middle && middle < twisty, "\(straight) \(middle) \(twisty)")
+    }
+
+    @Test func twistinessStillGivesPerfectMazes() {
+        for twistiness in [0.0, 0.5, 1.0] {
+            for seed in 0..<30 as Range<UInt64> {
+                let maze = MazeGenerator.generate(rows: 7, columns: 11, seed: seed, twistiness: twistiness)
+                #expect(MazeSolver.reachableCells(in: maze, from: maze.start).count == maze.cellCount)
+            }
+        }
+    }
+
+    @Test func aFreshMazeRefitsWhenTheSpaceChanges() {
+        let session = MazeGameSession(difficulty: .medium, seed: 33)
+        #expect(session.space == nil)
+        let theme = session.theme.id
+        session.updateSpace(MazeSpace(size: CGSize(width: 900, height: 400)))
+        #expect(session.maze.columns > session.maze.rows)
+        session.updateSpace(MazeSpace(size: CGSize(width: 400, height: 900)))
+        #expect(session.maze.rows > session.maze.columns)
+        #expect(session.theme.id == theme)
+        #expect(session.path.cells == [session.maze.start])
+    }
+
+    @Test func aMazeInProgressIsKeptWhenTheSpaceChanges() throws {
+        let session = MazeGameSession(difficulty: .medium, seed: 33)
+        session.updateSpace(MazeSpace(size: CGSize(width: 900, height: 400)))
+        let maze = session.maze
+        let route = try #require(MazeSolver.solve(maze, from: maze.start))
+        session.drag(from: center(row: route[0].row, column: route[0].column),
+                     to: center(row: route[1].row, column: route[1].column))
+        #expect(session.hasProgress)
+        let path = session.path
+        session.updateSpace(MazeSpace(size: CGSize(width: 400, height: 900)))
+        #expect(session.maze == maze)
+        #expect(session.path == path)
+    }
+
+    @Test func newMazeUsesTheCurrentSpace() {
+        let session = MazeGameSession(difficulty: .hard, seed: 1)
+        session.updateSpace(MazeSpace(size: CGSize(width: 1000, height: 400)))
+        for seed in 0..<10 as Range<UInt64> {
+            session.newMaze(seed: seed)
+            #expect(session.maze.columns > session.maze.rows)
+        }
     }
 
     // MARK: - Forgiving drags
