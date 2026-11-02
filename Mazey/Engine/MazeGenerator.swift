@@ -33,6 +33,15 @@ nonisolated enum MazeGenerator {
         }
     }
 
+    /// Generates a hexagon or triangle maze of the given shape for a difficulty level.
+    static func generate(difficulty: MazeDifficulty, seed: UInt64, style: MazeStyle, rows: Int, columns: Int) -> Maze {
+        // A triangle row holds about twice as many cells as a hexagon row of the same width.
+        let width = style == .triangle ? max(1, columns / 2) : columns
+        return search(seed: seed, criteria: difficulty.criteria(rows: rows, columns: width)) { attemptSeed in
+            generateTiled(style: style, rows: rows, columns: columns, seed: attemptSeed, twistiness: difficulty.twistiness)
+        }
+    }
+
     /// Tries `make` with derived seeds until a maze meets `criteria`, or returns the best one found.
     private static func search(seed: UInt64, criteria: MazeCriteria, make: (UInt64) -> Maze) -> Maze {
         var best: (maze: Maze, length: Int)?
@@ -81,6 +90,39 @@ nonisolated enum MazeGenerator {
         return maze
     }
 
+    // MARK: - Hexagon and triangle mazes
+
+    /// A hexagon or triangle maze. The start and finish are on the outer boundary, the finish
+    /// well away from the start, each with a gap in the wall.
+    static func generateTiled(style: MazeStyle, rows: Int, columns: Int, seed: UInt64, twistiness: Double = 0.5) -> Maze {
+        let geometry = MazeGeometry(style: style, rows: rows, columns: columns)
+        var rng = SeededGenerator(seed: seed)
+        let boundary = (0..<geometry.cellCount).map(geometry.point(at:)).filter { !geometry.boundaryEdges(of: $0).isEmpty }
+        let start = boundary[rng.next(below: boundary.count)]
+        let size = geometry.unitSize
+        let minimumDistance = Double(max(size.width, size.height)) / 2
+        let startCenter = geometry.unitCenter(of: start)
+        let far = boundary.filter { cell in
+            let center = geometry.unitCenter(of: cell)
+            return Double(hypot(center.x - startCenter.x, center.y - startCenter.y)) >= minimumDistance
+        }
+        let others = boundary.filter { $0 != start }
+        let finishPool = far.isEmpty ? (others.isEmpty ? [start] : others) : far
+        let finish = finishPool[rng.next(below: finishPool.count)]
+        let startEdges = geometry.boundaryEdges(of: start)
+        let finishEdges = geometry.boundaryEdges(of: finish)
+        var maze = Maze(
+            geometry: geometry,
+            start: start,
+            finish: finish,
+            startEdge: startEdges[rng.next(below: startEdges.count)],
+            finishEdge: finishEdges[rng.next(below: finishEdges.count)],
+            seed: seed
+        )
+        carveLinked(&maze, twistiness: twistiness, using: &rng)
+        return maze
+    }
+
     // MARK: - Circular mazes
 
     /// A circular maze: the start is a random cell on the outer ring and the finish is the hub.
@@ -91,12 +133,12 @@ nonisolated enum MazeGenerator {
         var rng = SeededGenerator(seed: seed)
         let start = GridPoint(row: sizes.count - 1, column: rng.next(below: sizes[sizes.count - 1]))
         var maze = Maze(ringSizes: sizes, start: start, seed: seed)
-        carveCircular(&maze, twistiness: twistiness, using: &rng)
+        carveLinked(&maze, twistiness: twistiness, using: &rng)
         return maze
     }
 
-    /// The same depth-first carving as the grid, over the circular cells' neighbours.
-    private static func carveCircular(_ maze: inout Maze, twistiness: Double, using rng: inout SeededGenerator) {
+    /// The same depth-first carving as the grid, over the neighbours of circular, hexagon or triangle cells.
+    private static func carveLinked(_ maze: inout Maze, twistiness: Double, using rng: inout SeededGenerator) {
         var visited = Array(repeating: false, count: maze.cellCount)
         let first = maze.point(at: rng.next(below: maze.cellCount))
         visited[maze.index(of: first)] = true

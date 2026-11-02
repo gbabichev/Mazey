@@ -19,6 +19,10 @@ nonisolated struct Maze: Equatable, Sendable {
     let finish: GridPoint
     let startSide: MazeDirection?
     let finishSide: MazeDirection?
+    /// Hexagon and triangle mazes: which edge of the start and finish cell has the gap in the
+    /// outer wall.
+    let startEdge: Int?
+    let finishEdge: Int?
     let seed: UInt64
     /// Grid only: which sides of each cell are open.
     private(set) var cells: [MazeCell]
@@ -43,6 +47,8 @@ nonisolated struct Maze: Equatable, Sendable {
         self.finish = finish
         self.startSide = startSide
         self.finishSide = finishSide
+        startEdge = nil
+        finishEdge = nil
         self.seed = seed
         self.cells = Array(repeating: MazeCell(), count: geometry.cellCount)
         self.links = []
@@ -57,6 +63,26 @@ nonisolated struct Maze: Equatable, Sendable {
         finish = GridPoint(row: 0, column: 0)
         startSide = nil
         finishSide = nil
+        startEdge = nil
+        finishEdge = nil
+        self.seed = seed
+        cells = []
+        links = Array(repeating: [], count: geometry.cellCount)
+    }
+
+    /// A hexagon or triangle maze with every wall up. The start and finish are on the outer
+    /// boundary, with a gap in the wall at `startEdge` and `finishEdge`.
+    init(geometry: MazeGeometry, start: GridPoint, finish: GridPoint, startEdge: Int?, finishEdge: Int?, seed: UInt64 = 0) {
+        precondition(geometry.style.isTiled)
+        self.geometry = geometry
+        rows = geometry.rows
+        columns = geometry.columns
+        self.start = start
+        self.finish = finish
+        startSide = nil
+        finishSide = nil
+        self.startEdge = startEdge
+        self.finishEdge = finishEdge
         self.seed = seed
         cells = []
         links = Array(repeating: [], count: geometry.cellCount)
@@ -90,7 +116,7 @@ nonisolated struct Maze: Equatable, Sendable {
         switch style {
         case .grid:
             return MazeDirection.allCases.compactMap { neighbor(of: point, $0) }
-        case .circular:
+        case .circular, .hexagon, .triangle:
             guard contains(point) else { return [] }
             return links[index(of: point)].map(self.point(at:))
         }
@@ -104,23 +130,28 @@ nonisolated struct Maze: Equatable, Sendable {
         cells[index(of: other)].passages.insert(direction.opposite.set)
     }
 
-    /// Knocks down the wall between two neighbouring cells. Circular mazes only.
+    /// Knocks down the wall between two neighbouring cells. Circular, hexagon and triangle mazes only.
     mutating func openLink(from a: GridPoint, to b: GridPoint) {
-        guard style == .circular, contains(a), contains(b) else { return }
+        guard style != .grid, contains(a), contains(b) else { return }
         let (first, second) = (index(of: a), index(of: b))
         guard !links[first].contains(second) else { return }
         links[first].append(second)
         links[second].append(first)
     }
 
-    /// True when the wall between two cells is open. Circular mazes only.
+    /// True when the wall between two cells is open. Circular, hexagon and triangle mazes only.
     func isLinked(_ a: GridPoint, _ b: GridPoint) -> Bool {
-        style == .circular && contains(a) && contains(b) && links[index(of: a)].contains(index(of: b))
+        style != .grid && contains(a) && contains(b) && links[index(of: a)].contains(index(of: b))
     }
 
     /// True if the outer wall has a gap on `direction` side of `point`. Grid mazes only.
     func hasOpening(at point: GridPoint, _ direction: MazeDirection) -> Bool {
         (point == start && startSide == direction) || (point == finish && finishSide == direction)
+    }
+
+    /// True if the outer wall has a gap at `edge` of `point`. Hexagon and triangle mazes only.
+    func hasOpening(at point: GridPoint, edge: Int) -> Bool {
+        (point == start && startEdge == edge) || (point == finish && finishEdge == edge)
     }
 
     // MARK: - Geometry

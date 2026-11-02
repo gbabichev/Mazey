@@ -60,14 +60,11 @@ struct StatisticsView: View {
             resetSection
         }
         .formStyle(.grouped)
-        .confirmationDialog("Start over?", isPresented: $confirmsReset, titleVisibility: .visible) {
-            Button("Erase everything", role: .destructive) {
+        .sheet(isPresented: $confirmsReset) {
+            ParentGateView {
                 onReset()
                 dismiss()
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes all stickers, stars, statistics and settings, as if the app was just installed. It cannot be undone.")
         }
     }
 
@@ -149,6 +146,58 @@ struct StatisticsView: View {
                 }
                 .font(.callout)
             }
+        }
+    }
+}
+
+/// "Ask a grown-up": the reset only goes ahead when a simple sum is answered correctly.
+private struct ParentGateView: View {
+    let onPassed: () -> Void
+    @State private var gate = ParentGate.make()
+    @State private var missed = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Ask a grown-up")
+                .font(.title2.weight(.semibold))
+            Text("This erases all stickers, stars, statistics and settings, as if the app was just installed. It cannot be undone.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+            Text("What is \(gate.question)?")
+                .font(.title.weight(.bold))
+                .padding(.top, 4)
+            HStack(spacing: 12) {
+                ForEach(gate.choices, id: \.self) { choice in
+                    Button("\(choice)") { choose(choice) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .font(.title3.weight(.semibold))
+                }
+            }
+            if missed {
+                Text("Not quite. Here is another one.")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+            Button("Cancel", role: .cancel) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(24)
+        #if os(iOS)
+        .presentationDetents([.medium])
+        #else
+        .frame(width: 420)
+        #endif
+    }
+
+    private func choose(_ choice: Int) {
+        if gate.isCorrect(choice) {
+            dismiss()
+            onPassed()
+        } else {
+            missed = true
+            gate = ParentGate.make()
         }
     }
 }

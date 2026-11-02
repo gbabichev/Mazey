@@ -30,9 +30,27 @@ final class Speech {
 
     private func utterance(for phrase: SpokenPhrase) -> AVSpeechUtterance {
         let utterance = AVSpeechUtterance(string: phrase.text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.pitchMultiplier = 1.25
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+        utterance.voice = Self.voice
+        // Pitch is left near natural: raising it far is what makes a synthetic voice sound robotic.
+        utterance.pitchMultiplier = 1.08
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.preUtteranceDelay = 0.05
         return utterance
     }
+
+    /// The most natural English voice installed: Premium and Enhanced voices beat the compact
+    /// default, and novelty, Personal and old robotic "Eloquence" voices are never used.
+    private static let voice: AVSpeechSynthesisVoice? = {
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            voice.language.hasPrefix("en")
+                && !voice.voiceTraits.contains(.isNoveltyVoice)
+                && !voice.voiceTraits.contains(.isPersonalVoice)
+                && !voice.identifier.contains("eloquence")
+                && !voice.identifier.contains("speech.synthesis.voice")
+        }
+        func rank(_ voice: AVSpeechSynthesisVoice) -> Int {
+            (voice.quality.rawValue * 10) + (voice.language == "en-US" ? 5 : 0)
+        }
+        return candidates.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: "en-US")
+    }()
 }

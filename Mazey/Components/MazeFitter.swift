@@ -92,6 +92,45 @@ nonisolated enum MazeFitter {
         return circularCellSize(cellCount: cellCount, in: space) >= minimumCircularCell
     }
 
+    // MARK: - Hexagon and triangle mazes
+
+    /// Hexagons must be at least this wide, and triangles this long a side, in points.
+    static func minimumTiledCell(_ style: MazeStyle) -> CGFloat { style == .triangle ? 46 : 34 }
+
+    /// The rows and columns of a hexagon or triangle maze of about `cellCount` cells whose cells
+    /// come out biggest in the best area `space` offers, and the size of one unit there.
+    static func tiledShape(style: MazeStyle, cellCount: Int, in space: MazeSpace) -> (rows: Int, columns: Int, cell: CGFloat) {
+        var best: (rows: Int, columns: Int, cell: CGFloat, count: Int)?
+        for (index, frame) in space.candidateFrames.enumerated() {
+            let bonus: CGFloat = index == 0 ? extendedAdvantage : 1
+            for rows in 2...maximumSide {
+                let ideal = Double(cellCount) / Double(rows)
+                for columns in Set([Int(ideal.rounded(.down)), Int(ideal.rounded(.up))]) where columns >= 3 && columns <= maximumSide * 2 {
+                    let count = rows * columns
+                    guard abs(Double(count - cellCount)) / Double(cellCount) <= countTolerance else { continue }
+                    let geometry = MazeGeometry(style: style, rows: rows, columns: columns)
+                    let extent = geometry.unitSize
+                    let aspect = Double(max(extent.width, extent.height) / min(extent.width, extent.height))
+                    guard aspect <= maximumAspect else { continue }
+                    let cell = MazeLayout(tiled: geometry, in: frame.size).cellSize * bonus
+                    if let current = best, (cell, count) <= (current.cell, current.count) { continue }
+                    best = (rows, columns, cell, count)
+                }
+            }
+        }
+        if let best { return (best.rows, best.columns, best.cell) }
+        let side = max(3, Int(Double(cellCount).squareRoot().rounded()))
+        return (side, side, 0)
+    }
+
+    /// True when a hexagon or triangle maze of about `cellCount` cells would have cells big
+    /// enough for fingers in `space`, and the space is not so long and thin that it wastes it.
+    static func supportsTiled(style: MazeStyle, cellCount: Int, in space: MazeSpace) -> Bool {
+        let (long, short) = (max(space.size.width, space.size.height), min(space.size.width, space.size.height))
+        guard short > 0, long / short <= maximumCircularAspect * 1.4 else { return false }
+        return tiledShape(style: style, cellCount: cellCount, in: space).cell >= minimumTiledCell(style)
+    }
+
     /// The area inside `space` that fits `maze` best: the plain safe area, or the taller one
     /// under the top bar when that makes the cells noticeably bigger.
     static func frame(for maze: Maze, in space: MazeSpace) -> CGRect {

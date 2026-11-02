@@ -69,6 +69,11 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         }
     }
 
+    /// The cells a maze of `style` has. Triangles are small for their side, so there are more.
+    func cellCount(for style: MazeStyle) -> Int {
+        style == .triangle ? cellCount * 3 / 2 : cellCount
+    }
+
     var title: String {
         switch self {
         case .beginner: "Beginner"

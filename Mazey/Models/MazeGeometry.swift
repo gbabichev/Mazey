@@ -12,6 +12,14 @@ nonisolated enum MazeStyle: String, CaseIterable, Sendable, Codable {
     case grid
     /// Rings of wedge-shaped cells around a hub: the start is on the outside, the finish in the middle.
     case circular
+    /// Honeycomb: six-sided cells in offset rows.
+    case hexagon
+    /// Triangular cells that point up and down alternately.
+    case triangle
+
+    /// Hexagon and triangle mazes: rows and columns of polygons whose cells connect through a
+    /// list of links, like a circular maze, instead of through the four sides of a square.
+    var isTiled: Bool { self == .hexagon || self == .triangle }
 }
 
 /// How a circular maze is laid out: a hub in the middle, then rings of cells that get more
@@ -79,6 +87,17 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         cellCount = self.rows * self.columns
     }
 
+    /// A hexagon or triangle tiling of `rows` by `columns` cells.
+    init(style: MazeStyle, rows: Int, columns: Int) {
+        precondition(style.isTiled, "use init(rows:columns:) or init(ringSizes:)")
+        self.style = style
+        self.rows = max(1, rows)
+        self.columns = max(1, columns)
+        ringSizes = []
+        ringOffsets = []
+        cellCount = self.rows * self.columns
+    }
+
     init(ringSizes: [Int]) {
         style = .circular
         self.ringSizes = ringSizes
@@ -98,7 +117,7 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
 
     func contains(_ point: GridPoint) -> Bool {
         switch style {
-        case .grid:
+        case .grid, .hexagon, .triangle:
             point.row >= 0 && point.row < rows && point.column >= 0 && point.column < columns
         case .circular:
             point.row >= 0 && point.row < ringSizes.count && point.column >= 0 && point.column < ringSizes[point.row]
@@ -106,12 +125,12 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
     }
 
     func index(of point: GridPoint) -> Int {
-        style == .grid ? point.row * columns + point.column : ringOffsets[point.row] + point.column
+        style != .circular ? point.row * columns + point.column : ringOffsets[point.row] + point.column
     }
 
     func point(at index: Int) -> GridPoint {
         switch style {
-        case .grid:
+        case .grid, .hexagon, .triangle:
             return GridPoint(row: index / columns, column: index % columns)
         case .circular:
             let ring = ringOffsets.lastIndex { $0 <= index } ?? 0
@@ -119,10 +138,17 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         }
     }
 
-    /// Every neighbouring cell of a circular maze (walls aside), tagged with the kind of move:
-    /// 0 anticlockwise, 1 clockwise, 2 inwards, 3 outwards. Empty for a grid.
+    /// Every neighbouring cell (walls aside), tagged with the kind of move so a generator can
+    /// tell carrying on from turning. Circular: 0 anticlockwise, 1 clockwise, 2 inwards,
+    /// 3 outwards. Hexagon: the edge crossed. Triangle: 0 sideways right, 1 up or down, 2 sideways
+    /// left. Empty for a grid.
     func adjacentCells(of point: GridPoint) -> [(point: GridPoint, kind: Int)] {
-        guard style == .circular, contains(point) else { return [] }
+        guard style != .grid, contains(point) else { return [] }
+        if style.isTiled {
+            return (0..<edgeCount).compactMap { edge in
+                neighbor(of: point, edge: edge).map { ($0, moveKind(of: point, edge: edge)) }
+            }
+        }
         var result: [(GridPoint, Int)] = []
         let size = ringSizes[point.row]
         if point.row >= 1 {
@@ -168,6 +194,8 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         switch style {
         case .grid:
             return CGPoint(x: Double(point.column) + 0.5, y: Double(point.row) + 0.5)
+        case .hexagon, .triangle:
+            return tiledCenter(of: point)
         case .circular:
             guard point.row > 0 else { return .zero }
             let radius = (innerRadius(ring: point.row) + outerRadius(ring: point.row)) / 2
@@ -182,6 +210,8 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         case .grid:
             let cell = GridPoint(row: Int(position.y.rounded(.down)), column: Int(position.x.rounded(.down)))
             return contains(cell) ? cell : nil
+        case .hexagon, .triangle:
+            return tiledCell(containing: position)
         case .circular:
             let radius = Double(hypot(position.x, position.y))
             if radius < Double(CircularShape.hubRadius) { return GridPoint(row: 0, column: 0) }
@@ -203,6 +233,9 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         case .grid:
             let center = unitCenter(of: point)
             return hypot(position.x - center.x, position.y - center.y)
+        case .hexagon, .triangle:
+            let center = unitCenter(of: point)
+            return hypot(position.x - center.x, position.y - center.y) * tiledDistanceScale
         case .circular:
             let radius = Double(hypot(position.x, position.y))
             if point.row == 0 { return CGFloat(0.5 * radius / Double(CircularShape.hubRadius)) }
@@ -244,6 +277,8 @@ nonisolated struct MazeGeometry: Equatable, Sendable {
         switch style {
         case .grid:
             return a.manhattanDistance(to: b)
+        case .hexagon, .triangle:
+            return tiledSteps(from: a, to: b)
         case .circular:
             let rings = abs(a.row - b.row)
             guard a.row > 0, b.row > 0 else { return rings }

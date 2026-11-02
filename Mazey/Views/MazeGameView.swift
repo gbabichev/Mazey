@@ -151,7 +151,7 @@ struct MazeGameView: View {
                     if session.isDemoVisible {
                         DemoFinger(
                             points: layout.polyline(for: session.demoRoute),
-                            cellSize: layout.cellSize,
+                            cellSize: layout.glyphSize,
                             playerEmoji: session.theme.playerEmoji,
                             trailColor: session.theme.path,
                             ringColor: session.theme.hint

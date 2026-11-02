@@ -157,21 +157,37 @@ final class MazeGameSession {
         collectedStars = []
     }
 
-    /// Roughly four mazes in ten are circular, picked from the seed so a given maze keeps its
-    /// style. A circular maze needs a roomy, not-too-long space; otherwise it is a grid.
-    static let circularShare = 40
+    /// Out of every hundred mazes, how many are circular, hexagon and triangle ones; the rest
+    /// are square grids. The style is picked from the seed so a given maze keeps its style. The
+    /// other styles need a roomy space with cells big enough for fingers; otherwise it is a grid.
+    static let circularShare = 20
+    static let hexagonShare = 20
+    static let triangleShare = 20
 
-    private func wantsCircular(seed: UInt64) -> Bool {
+    /// The style a seed asks for, before checking that the space suits it.
+    private func preferredStyle(seed: UInt64) -> MazeStyle {
         var rng = SeededGenerator(seed: seed ^ 0xC12C_1E5)
-        return rng.next(below: 100) < Self.circularShare
+        let roll = rng.next(below: 100)
+        if roll < Self.circularShare { return .circular }
+        if roll < Self.circularShare + Self.hexagonShare { return .hexagon }
+        if roll < Self.circularShare + Self.hexagonShare + Self.triangleShare { return .triangle }
+        return .grid
     }
 
     /// A maze for the current difficulty, shaped to fit the screen when its space is known.
     private func makeMaze(seed: UInt64) -> Maze {
         guard let space else { return MazeGenerator.generate(difficulty: difficulty, seed: seed) }
-        if wantsCircular(seed: seed), MazeFitter.supportsCircular(cellCount: difficulty.cellCount, in: space) {
+        let style = preferredStyle(seed: seed)
+        if style == .circular, MazeFitter.supportsCircular(cellCount: difficulty.cellCount, in: space) {
             let rings = CircularShape.rings(forCellCount: difficulty.cellCount)
             return MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: rings)
+        }
+        if style.isTiled {
+            let count = difficulty.cellCount(for: style)
+            if MazeFitter.supportsTiled(style: style, cellCount: count, in: space) {
+                let shape = MazeFitter.tiledShape(style: style, cellCount: count, in: space)
+                return MazeGenerator.generate(difficulty: difficulty, seed: seed, style: style, rows: shape.rows, columns: shape.columns)
+            }
         }
         let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: space)
         return MazeGenerator.generate(difficulty: difficulty, seed: seed, rows: shape.rows, columns: shape.columns)

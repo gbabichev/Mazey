@@ -123,7 +123,8 @@ nonisolated struct MazePath: Equatable, Sendable {
     private static func nextStep(toward goal: GridPoint, from end: GridPoint, in maze: Maze, candidates: [GridPoint]) -> GridPoint? {
         // A circular maze's inner cell touches two cells of the ring outside it, so cutting
         // from one of those to the inner cell is a two-step route that looks one step long.
-        let slack = maze.style == .circular ? 1 : 0
+        // Triangle steps are counted from distances, which can be a step out.
+        let slack = maze.style == .circular || maze.style == .triangle ? 1 : 0
         let straight = maze.straightSteps(from: end, to: goal)
         guard goal != end, straight <= 3, straight + slack >= 2,
               let route = MazeSolver.solve(maze, from: end, to: goal),

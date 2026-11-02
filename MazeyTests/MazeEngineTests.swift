@@ -1077,6 +1077,17 @@ struct MazeEngineTests {
                            starsCollected: stars, starsTotal: total, seed: seed, now: date)
     }
 
+    @Test func parentGateSumsAreHardForChildrenAndHaveOneRightAnswer() {
+        var generator = SeededGenerator(seed: 9)
+        for _ in 0..<200 {
+            let gate = ParentGate.make(using: &generator)
+            #expect(gate.answer >= 12 && gate.answer <= 18)
+            #expect(gate.choices.count == 4 && Set(gate.choices).count == 4)
+            #expect(gate.choices.filter(gate.isCorrect).count == 1)
+            #expect(gate.choices.allSatisfy { $0 > 0 })
+        }
+    }
+
     @Test func resettingEverythingReturnsToAFreshInstall() {
         let defaults = isolatedDefaults()
         let session = MazeGameSession(difficulty: .hard, seed: 5, defaults: defaults)
@@ -1549,15 +1560,152 @@ struct MazeEngineTests {
         return start
     }
 
-    @Test func aboutTwoInFiveMazesAreCircularInARoomySpace() {
+    @Test func eachNonGridStyleIsAboutOneMazeInFiveInARoomySpace() {
         let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
         session.updateSpace(roomySpace)
-        var circular = 0
+        var counts: [MazeStyle: Int] = [:]
         for seed in 0..<500 as Range<UInt64> {
             session.newMaze(seed: seed)
-            if session.maze.style == .circular { circular += 1 }
+            counts[session.maze.style, default: 0] += 1
         }
-        #expect((170...230).contains(circular), "\(circular) of 500")
+        for style in [MazeStyle.circular, .hexagon, .triangle] {
+            #expect((70...130).contains(counts[style, default: 0]), "\(style): \(counts)")
+        }
+        #expect((140...260).contains(counts[.grid, default: 0]), "\(counts)")
+    }
+
+    // MARK: - Hexagon and triangle mazes
+
+    private let tiledStyles: [MazeStyle] = [.hexagon, .triangle]
+
+    @Test func tiledCellsAreConsistentlyConnected() {
+        for style in tiledStyles {
+            let geometry = MazeGeometry(style: style, rows: 6, columns: 9)
+            for index in 0..<geometry.cellCount {
+                let cell = geometry.point(at: index)
+                let corners = geometry.vertices(of: cell)
+                #expect(corners.count == geometry.edgeCount)
+                // The middle of a cell is inside it, and every point near the middle maps back to it.
+                #expect(geometry.cell(containing: geometry.unitCenter(of: cell)) == cell, "\(style) \(cell)")
+                for edge in 0..<geometry.edgeCount {
+                    guard let other = geometry.neighbor(of: cell, edge: edge) else { continue }
+                    // Neighbours are mutual, and share the corners of the edge between them.
+                    let back = (0..<geometry.edgeCount).filter { geometry.neighbor(of: other, edge: $0) == cell }
+                    #expect(back.count == 1, "\(style) \(cell) -> \(other)")
+                    let a = geometry.edgeMidpoint(of: cell, edge: edge)
+                    let b = geometry.edgeMidpoint(of: other, edge: back[0])
+                    #expect(hypot(a.x - b.x, a.y - b.y) < 1e-9, "\(style) \(cell) -> \(other)")
+                    #expect(geometry.straightSteps(from: cell, to: other) == 1)
+                }
+            }
+        }
+    }
+
+    @Test func tiledPositionsMapToTheCellTheyAreInside() {
+        for style in tiledStyles {
+            let geometry = MazeGeometry(style: style, rows: 5, columns: 8)
+            let size = geometry.unitSize
+            var found = 0
+            for step in 0..<4000 {
+                let position = CGPoint(x: size.width * (Double(step % 80) + 0.5) / 80, y: size.height * (Double(step / 80) + 0.5) / 50)
+                guard let cell = geometry.cell(containing: position) else { continue }
+                found += 1
+                // The nearest middle among all cells is this one (hexagons), or it is close.
+                let own = geometry.distance(from: position, to: cell)
+                #expect(own <= 1.05, "\(style) \(position)")
+            }
+            #expect(found > 3200, "\(style) covers most of its extent")
+            #expect(geometry.cell(containing: CGPoint(x: -1, y: -1)) == nil)
+            #expect(geometry.cell(containing: CGPoint(x: size.width + 1, y: size.height + 1)) == nil)
+        }
+    }
+
+    @Test func tiledMazesArePerfectAndSolvable() throws {
+        for style in tiledStyles {
+            for seed in 0..<20 as Range<UInt64> {
+                let maze = MazeGenerator.generateTiled(style: style, rows: 7, columns: style == .triangle ? 14 : 8, seed: seed)
+                #expect(maze.style == style)
+                // A perfect maze joins every cell with exactly cells - 1 passages.
+                let links = (0..<maze.cellCount).reduce(0) { $0 + maze.openNeighbors(of: maze.point(at: $1)).count }
+                #expect(links == 2 * (maze.cellCount - 1), "\(style) seed \(seed)")
+                #expect(MazeSolver.reachableCells(in: maze, from: maze.start).count == maze.cellCount)
+                #expect(try #require(MazeSolver.solve(maze, from: maze.start)).count > 3)
+                // The gaps are in the outer wall.
+                let startEdge = try #require(maze.startEdge), finishEdge = try #require(maze.finishEdge)
+                #expect(maze.geometry.neighbor(of: maze.start, edge: startEdge) == nil)
+                #expect(maze.geometry.neighbor(of: maze.finish, edge: finishEdge) == nil)
+                #expect(maze.start != maze.finish)
+            }
+        }
+    }
+
+    @Test func tiledMazesAreRepeatableForASeed() {
+        for style in tiledStyles {
+            let a = MazeGenerator.generate(difficulty: .medium, seed: 17, style: style, rows: 8, columns: 12)
+            let b = MazeGenerator.generate(difficulty: .medium, seed: 17, style: style, rows: 8, columns: 12)
+            #expect(a == b)
+        }
+    }
+
+    @Test func tiledMazesFitTheScreenAndPlayToTheEnd() throws {
+        for style in tiledStyles {
+            for difficulty in MazeDifficulty.allCases {
+                let session = MazeGameSession(difficulty: difficulty, seed: 1, defaults: isolatedDefaults())
+                session.updateSpace(roomySpace)
+                var seed: UInt64 = 0
+                session.newMaze(seed: seed)
+                while session.maze.style != style, seed < 400 {
+                    seed += 1
+                    session.newMaze(seed: seed)
+                }
+                // The largest levels are too small for fingers here, and fall back to a grid.
+                guard session.maze.style == style else { continue }
+                #expect(session.stars.isSubset(of: StarPlacement.playableCells(in: session.maze)))
+                let layout = MazeLayout(maze: session.maze, in: roomySpace.size)
+                #expect(layout.mazeRect.minX >= 0 && layout.mazeRect.maxX <= roomySpace.size.width)
+                #expect(layout.mazeRect.minY >= 0 && layout.mazeRect.maxY <= roomySpace.size.height)
+                for star in session.stars.sorted(by: { ($0.row, $0.column) < ($1.row, $1.column) }) {
+                    if let route = MazeSolver.solve(session.maze, from: session.path.end, to: star) { dragAlong(route, in: session) }
+                }
+                #expect(session.uncollectedStars.isEmpty && !session.isComplete, "\(style) \(difficulty)")
+                let route = try #require(MazeSolver.solve(session.maze, from: session.path.end, to: session.maze.finish))
+                dragAlong(route, in: session)
+                #expect(session.isComplete, "\(style) \(difficulty)")
+            }
+        }
+    }
+
+    @Test func tiledStylesAreNotUsedWhereCellsWouldBeTooSmall() {
+        for style in tiledStyles {
+            #expect(!MazeFitter.supportsTiled(style: style, cellCount: 400, in: MazeSpace(size: CGSize(width: 300, height: 300))))
+            #expect(MazeFitter.supportsTiled(style: style, cellCount: 16, in: MazeSpace(size: CGSize(width: 800, height: 700))))
+            #expect(!MazeFitter.supportsTiled(style: style, cellCount: 36, in: MazeSpace(size: CGSize(width: 1200, height: 200))))
+        }
+    }
+
+    @Test func aFingerThatWobblesStillGetsThroughATiledMaze() {
+        for style in tiledStyles {
+            var finished = 0, total = 0
+            for seed in 0..<12 as Range<UInt64> {
+                let maze = MazeGenerator.generate(difficulty: .medium, seed: seed, style: style, rows: 7, columns: style == .triangle ? 14 : 8)
+                guard let route = MazeSolver.solve(maze, from: maze.start) else { continue }
+                var path = MazePath(start: maze.start)
+                var rng = SeededGenerator(seed: seed)
+                total += 1
+                let points = maze.geometry.polyline(through: route)
+                for (a, b) in zip(points, points.dropFirst()) {
+                    for step in 0...10 {
+                        let t = CGFloat(step) / 10
+                        let jitterX = CGFloat(rng.next(below: 100)) / 100 * 0.1 - 0.05
+                        let jitterY = CGFloat(rng.next(below: 100)) / 100 * 0.1 - 0.05
+                        let pointer = CGPoint(x: a.x + (b.x - a.x) * t + jitterX, y: a.y + (b.y - a.y) * t + jitterY)
+                        path.follow(pointer, in: maze, allowRetrace: true, finish: maze.finish)
+                    }
+                }
+                if path.end == maze.finish { finished += 1 }
+            }
+            #expect(Double(finished) / Double(max(total, 1)) >= 0.9, "\(style): \(finished) of \(total)")
+        }
     }
 
     @Test func circularMazesAreNotUsedWhereTheyWouldBeCramped() {

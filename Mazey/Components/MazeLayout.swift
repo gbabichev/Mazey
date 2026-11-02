@@ -32,6 +32,8 @@ nonisolated struct MazeLayout: Sendable {
             self.init(rows: maze.rows, columns: maze.columns, in: size, startSide: maze.startSide, finishSide: maze.finishSide)
         case .circular:
             self.init(rings: maze.geometry.ringSizes.count - 1, in: size)
+        case .hexagon, .triangle:
+            self.init(tiled: maze.geometry, in: size)
         }
     }
 
@@ -69,7 +71,26 @@ nonisolated struct MazeLayout: Sendable {
         origin = CGPoint(x: size.width / 2, y: size.height / 2)
     }
 
+    /// The fit for a hexagon or triangle maze. START and FINISH labels can be on any side, so
+    /// room is kept all the way round.
+    init(tiled geometry: MazeGeometry, in size: CGSize) {
+        self.geometry = geometry
+        rows = geometry.rows
+        columns = geometry.columns
+        margins = [:]
+        let available = CGSize(width: max(1, size.width - Self.labelMargin * 2), height: max(1, size.height - Self.labelMargin * 2))
+        let extent = geometry.unitSize
+        cellSize = min(available.width / extent.width, available.height / extent.height)
+        origin = CGPoint(
+            x: (size.width - extent.width * cellSize) / 2,
+            y: (size.height - extent.height * cellSize) / 2
+        )
+    }
+
     var isCircular: Bool { geometry.style == .circular }
+
+    /// How big characters and lines in a cell are, in points.
+    var glyphSize: CGFloat { cellSize * geometry.glyphScale }
 
     /// The square a circular maze fills, or the grid itself.
     var mazeRect: CGRect {
@@ -77,12 +98,16 @@ nonisolated struct MazeLayout: Sendable {
             let radius = CircularShape.outerRadius(rings: geometry.ringSizes.count - 1) * cellSize
             return CGRect(x: origin.x - radius, y: origin.y - radius, width: radius * 2, height: radius * 2)
         }
+        if geometry.style.isTiled {
+            let extent = geometry.unitSize
+            return CGRect(x: origin.x, y: origin.y, width: extent.width * cellSize, height: extent.height * cellSize)
+        }
         return CGRect(x: origin.x, y: origin.y, width: cellSize * CGFloat(columns), height: cellSize * CGFloat(rows))
     }
 
     /// The maze plus the labels outside its openings.
     var contentRect: CGRect {
-        guard !isCircular else { return mazeRect }
+        guard geometry.style == .grid else { return mazeRect }
         let extra = Self.labelMargin - Self.baseMargin
         var rect = mazeRect
         for direction in MazeDirection.allCases where margins[direction] == Self.labelMargin {
