@@ -19,6 +19,7 @@ struct MazeGameView: View {
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarColorScheme(session.theme.isDark ? .dark : .light, for: .navigationBar)
                 #endif
         }
     }
@@ -27,14 +28,10 @@ struct MazeGameView: View {
         VStack(spacing: 16) {
             mazeArea
         }
-        .background(
-            LinearGradient(
-                colors: [MazePalette.backgroundTop, MazePalette.backgroundBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
+        .background {
+            ThemeBackdrop(theme: session.theme, seed: session.maze.seed)
+                .ignoresSafeArea()
+        }
         #if os(macOS)
         // Arrow-key play. Skipped on iOS, where a focusable view summons the on-screen keyboard.
         .focusable()
@@ -71,7 +68,7 @@ struct MazeGameView: View {
             } label: {
                 Image(systemName: "sparkles")
             }
-            .tint(MazePalette.player)
+            .tint(session.theme.accent)
             .accessibilityLabel("New maze")
 
             Button {
@@ -86,7 +83,7 @@ struct MazeGameView: View {
             } label: {
                 Image(systemName: session.hintLevel == nil ? "lightbulb" : "lightbulb.fill")
             }
-            .tint(MazePalette.hint)
+            .tint(session.theme.hint)
             .accessibilityLabel("Hint")
         }
     }
@@ -94,12 +91,13 @@ struct MazeGameView: View {
     private var mazeArea: some View {
         GeometryReader { geometry in
             let frame = mazeFrame(in: geometry)
-            let layout = MazeLayout(rows: session.maze.rows, columns: session.maze.columns, in: frame.size)
+            let layout = MazeLayout(maze: session.maze, in: frame.size)
             MazeCanvas(
                 maze: session.maze,
                 route: session.path.cells,
                 hint: session.hintCells,
-                hintLevel: session.hintLevel
+                hintLevel: session.hintLevel,
+                theme: session.theme
             )
             .frame(width: frame.width, height: frame.height)
             .contentShape(Rectangle())
@@ -118,7 +116,7 @@ struct MazeGameView: View {
             )
             .overlay {
                 if session.isComplete {
-                    CelebrationView {
+                    CelebrationView(theme: session.theme) {
                         withAnimation { session.newMaze() }
                     }
                     .transition(.scale.combined(with: .opacity))
@@ -146,8 +144,9 @@ struct MazeGameView: View {
         #if os(iOS)
         let top = geometry.safeAreaInsets.top
         let extended = CGSize(width: size.width, height: size.height + top)
-        let full = MazeLayout(rows: session.maze.rows, columns: session.maze.columns, in: extended)
-        let sideSpace = (size.width - full.mazeRect.width) / 2
+        let full = MazeLayout(maze: session.maze, in: extended)
+        let content = full.contentRect
+        let sideSpace = min(content.minX, size.width - content.maxX)
         if sideSpace >= toolbarClearance {
             return CGRect(x: 0, y: -top, width: size.width, height: size.height + top)
         }

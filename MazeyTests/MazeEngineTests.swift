@@ -262,6 +262,44 @@ struct MazeEngineTests {
         #expect(session.path == before)
     }
 
+    // MARK: - Themes
+
+    @Test func everyThemeIsComplete() {
+        #expect(Set(MazeTheme.all.map(\.id)).count == MazeTheme.all.count)
+        for theme in MazeTheme.all {
+            #expect(!theme.playerEmoji.isEmpty && !theme.startEmoji.isEmpty && !theme.finishEmoji.isEmpty)
+            #expect(theme.decorations.count >= 3)
+        }
+    }
+
+    @Test func sameSeedGivesSameTheme() {
+        for seed in 0..<100 as Range<UInt64> {
+            #expect(MazeTheme.theme(for: seed).id == MazeTheme.theme(for: seed).id)
+        }
+    }
+
+    @Test func newThemeNeverRepeatsThePreviousOne() {
+        for seed in 0..<200 as Range<UInt64> {
+            for previous in MazeTheme.all {
+                #expect(MazeTheme.theme(for: seed, avoiding: previous).id != previous.id)
+            }
+        }
+    }
+
+    @Test func everyThemeIsUsedAcrossSeeds() {
+        let used = Set((0..<100 as Range<UInt64>).map { MazeTheme.theme(for: $0).id })
+        #expect(used.count == MazeTheme.all.count)
+    }
+
+    @Test func newMazeChangesTheme() {
+        let session = MazeGameSession(difficulty: .easy, seed: 5)
+        for seed in 0..<50 as Range<UInt64> {
+            let before = session.theme.id
+            session.newMaze(seed: seed)
+            #expect(session.theme.id != before)
+        }
+    }
+
     // MARK: - Stress
 
     @Test func generatingThousandsOfMazesIsSafe() {

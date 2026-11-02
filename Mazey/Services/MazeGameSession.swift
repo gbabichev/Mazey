@@ -16,6 +16,7 @@ final class MazeGameSession {
     private(set) var hintLevel: MazeHintLevel?
     private(set) var isComplete = false
     private(set) var difficulty: MazeDifficulty
+    private(set) var theme: MazeTheme
 
     /// True once the current drag has touched the end of the path, which lets
     /// the drag retrace. A drag that starts elsewhere is ignored until then.
@@ -24,6 +25,7 @@ final class MazeGameSession {
     init(difficulty: MazeDifficulty = .beginner, seed: UInt64 = .random(in: .min ... .max)) {
         let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
         self.difficulty = difficulty
+        self.theme = MazeTheme.theme(for: seed)
         self.maze = maze
         self.path = MazePath(start: maze.start)
     }
@@ -39,6 +41,7 @@ final class MazeGameSession {
     func newMaze(difficulty: MazeDifficulty? = nil, seed: UInt64 = .random(in: .min ... .max)) {
         if let difficulty { self.difficulty = difficulty }
         maze = MazeGenerator.generate(difficulty: self.difficulty, seed: seed)
+        theme = MazeTheme.theme(for: seed, avoiding: theme)
         restart()
     }
 
