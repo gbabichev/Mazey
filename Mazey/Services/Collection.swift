@@ -209,6 +209,12 @@ final class CollectionStore {
         )
     }
 
+    /// Forgets every sticker and finished maze, as if the app had never been played.
+    func reset() {
+        progress = Progress()
+        defaults.removeObject(forKey: Self.key)
+    }
+
     private func save() {
         if let data = try? JSONEncoder().encode(progress) {
             defaults.set(data, forKey: Self.key)

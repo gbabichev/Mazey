@@ -1077,6 +1077,27 @@ struct MazeEngineTests {
                            starsCollected: stars, starsTotal: total, seed: seed, now: date)
     }
 
+    @Test func resettingEverythingReturnsToAFreshInstall() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .hard, seed: 5, defaults: defaults)
+        _ = record(session.collection)
+        session.isSoundOn = false
+        session.isVoiceOn = false
+        session.dismissDemo()
+        session.resetEverything()
+
+        #expect(session.collection.ownedStickerCount == 0)
+        #expect(session.collection.statistics.totalFinished == 0)
+        #expect(session.difficulty == .beginner)
+        #expect(session.isSoundOn && session.isVoiceOn && session.isDemoVisible)
+        #expect(session.completedMazes == 0 && !session.isComplete)
+
+        // A relaunch on the same storage looks brand new too.
+        let relaunched = MazeGameSession(seed: 5, defaults: defaults)
+        #expect(relaunched.collection.ownedStickerCount == 0)
+        #expect(relaunched.difficulty == .beginner && relaunched.isDemoVisible)
+    }
+
     @Test func finishingAwardsAStickerAndGoldNeedsEveryStar() {
         let store = CollectionStore(defaults: isolatedDefaults())
         let plain = record(store, stars: 2, of: 4)

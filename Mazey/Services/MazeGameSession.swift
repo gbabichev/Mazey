@@ -185,6 +185,22 @@ final class MazeGameSession {
 
     // MARK: - Starting over
 
+    /// Wipes everything remembered (stickers, statistics, settings, difficulty and the
+    /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
+    func resetEverything() {
+        collection.reset()
+        for key in [Self.soundKey, Self.voiceKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
+            defaults.removeObject(forKey: key)
+        }
+        completedMazes = 0
+        lastReward = nil
+        isSoundOn = true
+        isVoiceOn = true
+        newMaze(difficulty: .beginner)
+        defaults.removeObject(forKey: Self.difficultyKey)
+        isDemoVisible = true
+    }
+
     func newMaze(difficulty: MazeDifficulty? = nil, seed: UInt64 = .random(in: .min ... .max)) {
         if let difficulty {
             self.difficulty = difficulty

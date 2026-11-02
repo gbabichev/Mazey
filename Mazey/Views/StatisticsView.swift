@@ -10,6 +10,9 @@ import SwiftUI
 /// Children never see times, so there is nothing to race against.
 struct StatisticsView: View {
     let collection: CollectionStore
+    /// Wipes everything and starts the app over.
+    let onReset: () -> Void
+    @State private var confirmsReset = false
     @Environment(\.dismiss) private var dismiss
 
     private var statistics: Statistics { collection.statistics }
@@ -54,8 +57,26 @@ struct StatisticsView: View {
                 byLevel
                 recent
             }
+            resetSection
         }
         .formStyle(.grouped)
+        .confirmationDialog("Start over?", isPresented: $confirmsReset, titleVisibility: .visible) {
+            Button("Erase everything", role: .destructive) {
+                onReset()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes all stickers, stars, statistics and settings, as if the app was just installed. It cannot be undone.")
+        }
+    }
+
+    private var resetSection: some View {
+        Section {
+            Button("Reset everything…", role: .destructive) { confirmsReset = true }
+        } footer: {
+            Text("Clears stickers, statistics and settings and starts over.")
+        }
     }
 
     // MARK: - Sections

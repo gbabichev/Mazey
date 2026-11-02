@@ -25,7 +25,7 @@ struct SettingsView: View {
                 }
         }
         .presentationDetents([.medium, .large])
-        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection) }
+        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection, onReset: session.resetEverything) }
         #else
         // A Mac sheet has no navigation bar: a heading, the switches, and a Done button.
         VStack(alignment: .leading, spacing: 16) {
@@ -42,7 +42,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 400)
-        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection) }
+        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection, onReset: session.resetEverything) }
         #endif
     }
 
