@@ -27,7 +27,7 @@ nonisolated struct MazeCriteria: Equatable, Sendable {
 }
 
 nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, Codable {
-    case beginner, easy, medium, hard
+    case beginner, easy, medium, hard, expert
 
     var id: String { rawValue }
 
@@ -39,6 +39,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: 36
         case .medium: 81
         case .hard: 144
+        case .expert: 400
         }
     }
 
@@ -49,6 +50,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: 4
         case .medium: 6
         case .hard: 8
+        case .expert: 10
         }
     }
 
@@ -63,6 +65,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: 0.45
         case .medium: 0.6
         case .hard: 0.75
+        case .expert: 0.9
         }
     }
 
@@ -72,6 +75,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: "Easy"
         case .medium: "Medium"
         case .hard: "Hard"
+        case .expert: "Expert"
         }
     }
 
@@ -82,6 +86,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: 2
         case .medium: 3
         case .hard: 4
+        case .expert: 5
         }
     }
 
@@ -95,6 +100,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: (routeFactor, decisionRate) = (1.0, 0.025)
         case .medium: (routeFactor, decisionRate) = (1.1, 0.03)
         case .hard: (routeFactor, decisionRate) = (1.25, 0.03)
+        case .expert: (routeFactor, decisionRate) = (1.6, 0.04)
         }
         return MazeCriteria(
             minimumSolutionLength: Int(Double(rings) * 3 * routeFactor),
@@ -112,6 +118,7 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         case .easy: (routeFactor, decisionRate) = (1.0, 0.03)
         case .medium: (routeFactor, decisionRate) = (1.1, 0.035)
         case .hard: (routeFactor, decisionRate) = (1.25, 0.035)
+        case .expert: (routeFactor, decisionRate) = (1.7, 0.045)
         }
         return MazeCriteria(
             minimumSolutionLength: Int(Double(rows + columns) * routeFactor),

@@ -22,6 +22,10 @@ struct CelebrationView: View {
         .padding(26)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
         .shadow(radius: 12)
+        // The material follows the system's light or dark setting, so pin the whole card (the
+        // material included, hence after `background`) to the theme's own look. Otherwise dark
+        // text can land on a dark card, or the reverse.
+        .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .onAppear {
             withAnimation(.spring(duration: 0.7, bounce: 0.55).delay(0.15)) { popped = true }
         }
@@ -58,13 +62,14 @@ struct CelebrationView: View {
     private var words: some View {
         Text("You did it!")
             .font(.system(size: 34, weight: .heavy, design: .rounded))
-            .foregroundStyle(theme.ink)
+            .foregroundStyle(theme.headlineColor)
         if let reward {
             badges(reward)
         }
         Button(action: onNext) {
             Label("Next Maze", systemImage: "arrow.right.circle.fill")
                 .font(.title2.weight(.bold))
+                .foregroundStyle(theme.accent.readableText)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
@@ -104,7 +109,7 @@ struct CelebrationView: View {
     private func badge(_ text: String, symbol: String, color: Color) -> some View {
         Label(text, systemImage: symbol)
             .font(.footnote.weight(.bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(color.readableText)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(color, in: Capsule())

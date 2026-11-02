@@ -21,7 +21,7 @@ nonisolated enum CircularShape {
     static let hubRadius: CGFloat = 1.4
     /// How many cells the first ring has.
     static let baseSectors = 6
-    static let maximumRings = 8
+    static let maximumRings = 12
     /// A ring doubles its cell count once its cells would otherwise be wider than this.
     private static let doublingWidth = 1.6
 

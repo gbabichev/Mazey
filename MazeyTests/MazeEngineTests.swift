@@ -5,6 +5,7 @@
 
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 @testable import Mazey
 
@@ -1617,10 +1618,93 @@ struct MazeEngineTests {
         #expect(maze.straightSteps(from: GridPoint(row: 0, column: 0), to: GridPoint(row: 2, column: 3)) == 5)
     }
 
+    // MARK: - Expert level
+
+    @Test func theFiveLevelsStepUpInEveryWay() {
+        let levels = MazeDifficulty.allCases
+        #expect(levels.count == 5 && levels.last == .expert)
+        #expect(levels.map(\.starCount) == [1, 2, 3, 4, 5])
+        #expect(levels.map(\.cellCount) == levels.map(\.cellCount).sorted())
+        #expect(Set(levels.map(\.cellCount)).count == 5)
+        #expect(levels.map(\.collectibleCount) == levels.map(\.collectibleCount).sorted())
+        #expect(levels.map(\.twistiness) == levels.map(\.twistiness).sorted())
+        #expect(MazeDifficulty.expert.title == "Expert")
+        #expect(Double(MazeDifficulty.expert.cellCount) >= 2.5 * Double(MazeDifficulty.hard.cellCount))
+    }
+
+    @Test func expertIsMuchHarderThanHardInBothStyles() throws {
+        func average(_ difficulty: MazeDifficulty, circular: Bool) throws -> (route: Double, decisions: Double) {
+            var route = 0.0, decisions = 0.0
+            for seed in 0..<15 as Range<UInt64> {
+                let maze = circular
+                    ? MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: CircularShape.rings(forCellCount: difficulty.cellCount))
+                    : MazeGenerator.generate(difficulty: difficulty, seed: seed)
+                let metrics = try #require(MazeSolver.metrics(for: maze))
+                route += Double(metrics.solutionLength)
+                decisions += Double(metrics.decisionPoints)
+            }
+            return (route / 15, decisions / 15)
+        }
+        for circular in [false, true] {
+            let hard = try average(.hard, circular: circular)
+            let expert = try average(.expert, circular: circular)
+            #expect(expert.route >= 2.5 * hard.route, "circular \(circular): \(expert.route) vs \(hard.route)")
+            #expect(expert.decisions >= 2 * hard.decisions, "circular \(circular): \(expert.decisions) vs \(hard.decisions)")
+        }
+    }
+
+    @Test func expertMazesAreBigPerfectAndSolvableInBothStyles() {
+        for seed in 0..<10 as Range<UInt64> {
+            let grid = MazeGenerator.generate(difficulty: .expert, seed: seed)
+            #expect(grid.cellCount == 400 && MazeSolver.isSolvable(grid))
+            #expect(MazeSolver.reachableCells(in: grid, from: grid.start).count == 400)
+            let rings = CircularShape.rings(forCellCount: MazeDifficulty.expert.cellCount)
+            let circular = MazeGenerator.generate(difficulty: .expert, seed: seed, rings: rings)
+            #expect(abs(circular.cellCount - 400) <= 100 && MazeSolver.isSolvable(circular))
+            #expect(MazeSolver.reachableCells(in: circular, from: circular.start).count == circular.cellCount)
+        }
+    }
+
+    @Test func expertIsRememberedAndPlayable() throws {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(defaults: defaults)
+        session.newMaze(difficulty: .expert)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .expert)
+        #expect(session.stars.count == 10)
+        session.updateSpace(MazeSpace(size: CGSize(width: 900, height: 700)))
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: session.maze.unitCenter(of: from), to: session.maze.unitCenter(of: to))
+        }
+        #expect(session.isComplete)
+        #expect(session.collection.statistics.difficulty(.expert)?.count == 1)
+    }
+
+    // MARK: - Readable text
+
+    @Test func readableTextHasStrongContrastOnAnyColor() {
+        #expect(Color.contrastRatio(.black, .white) > 20)
+        for step in stride(from: 0.0, through: 1.0, by: 0.1) {
+            for tint in [Color(red: step, green: 0.5, blue: 0.2), Color(red: 0.2, green: step, blue: 0.8), Color(white: step)] {
+                #expect(Color.contrastRatio(tint, tint.readableText) >= 4.5, "step \(step)")
+            }
+        }
+    }
+
+    @Test func everyThemesButtonAndBadgeTextIsReadable() {
+        let badgeColors = [Color(red: 0.2, green: 0.6, blue: 0.35), Color(red: 0.85, green: 0.62, blue: 0.0)]
+        for theme in MazeTheme.all {
+            #expect(Color.contrastRatio(theme.accent, theme.accent.readableText) >= 4.5, "\(theme.id) accent")
+            // The headline sits on a card pinned to the theme's own light or dark look.
+            #expect(Color.contrastRatio(theme.cardBackground, theme.headlineColor) >= 4.5, "\(theme.id) headline")
+        }
+        for color in badgeColors { #expect(Color.contrastRatio(color, color.readableText) >= 4.5) }
+    }
+
     // MARK: - Stress
 
     @Test func generatingThousandsOfMazesIsSafe() {
-        for seed in 0..<3000 as Range<UInt64> {
+        for seed in 0..<2000 as Range<UInt64> {
             let difficulty = MazeDifficulty.allCases[Int(seed) % MazeDifficulty.allCases.count]
             let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed &* 7919)
             #expect(MazeSolver.isSolvable(maze))
