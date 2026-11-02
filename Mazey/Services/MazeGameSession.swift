@@ -37,7 +37,17 @@ final class MazeGameSession {
     /// How many mazes have been finished, remembered between launches.
     private(set) var completedMazes: Int
 
+    /// Whether the app speaks (the goal with the demo, and the cheer at the finish).
+    /// Remembered between launches, and only matters while sound is on.
+    var isVoiceOn: Bool {
+        didSet {
+            defaults.set(isVoiceOn, forKey: Self.voiceKey)
+            if !isVoiceOn { sounds.stopSpeaking() }
+        }
+    }
+
     static let soundKey = "soundEnabled"
+    static let voiceKey = "voiceEnabled"
     static let demoSeenKey = "demoSeen"
     static let completedKey = "completedMazes"
     /// The idle nudge stops once a child has finished this many mazes: they know what to do.
@@ -59,6 +69,7 @@ final class MazeGameSession {
         self.sounds = sounds
         self.defaults = defaults
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
+        self.isVoiceOn = defaults.object(forKey: Self.voiceKey) as? Bool ?? true
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
         self.completedMazes = defaults.integer(forKey: Self.completedKey)
         self.difficulty = difficulty
@@ -154,7 +165,7 @@ final class MazeGameSession {
     }
 
     private func speak(_ phrase: SpokenPhrase) {
-        if isSoundOn { sounds.speak(phrase) }
+        if isSoundOn && isVoiceOn { sounds.speak(phrase) }
     }
 
     // MARK: - Hints

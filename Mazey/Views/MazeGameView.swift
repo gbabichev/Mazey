@@ -9,6 +9,7 @@ import SwiftUI
 struct MazeGameView: View {
     @State private var session = MazeGameSession(sounds: SoundEngine.shared)
     @State private var lastDragLocation: CGPoint?
+    @State private var showsSettings = false
     @FocusState private var isFocused: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -16,6 +17,7 @@ struct MazeGameView: View {
         NavigationStack {
             content
                 .toolbar { toolbarContent }
+                .sheet(isPresented: $showsSettings) { SettingsView(session: session) }
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -69,6 +71,14 @@ struct MazeGameView: View {
                 Image(systemName: session.isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
             }
             .accessibilityLabel(session.isSoundOn ? "Sound on" : "Sound off")
+        }
+        ToolbarItem(placement: .navigation) {
+            Button {
+                showsSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+            }
+            .accessibilityLabel("Settings")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
@@ -193,7 +203,7 @@ struct MazeGameView: View {
     /// under toolbar buttons. Wide (regular) windows also show status bar text such as the
     /// date and app name along the top edge, which needs more room.
     private var toolbarClearance: CGFloat {
-        horizontalSizeClass == .regular ? 240 : 200
+        horizontalSizeClass == .regular ? 240 : 230
     }
 
     private func direction(for key: KeyEquivalent) -> MazeDirection? {
