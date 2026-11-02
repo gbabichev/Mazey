@@ -978,6 +978,59 @@ struct MazeEngineTests {
         #expect(StarPlacement.cells(in: tiny, count: 0).isEmpty)
     }
 
+    @Test func everyStarCanBeReachedWithoutPassingThroughTheFinish() {
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<150 as Range<UInt64> {
+                let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
+                let playable = StarPlacement.playableCells(in: maze)
+                let stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
+                #expect(stars.isSubset(of: playable), "\(difficulty) seed \(seed) has a star behind the finish")
+                for star in stars {
+                    let route = MazeSolver.solve(maze, from: maze.start, to: star)
+                    #expect(route != nil && !route!.dropLast().contains(maze.finish), "route to a star crosses the finish")
+                }
+            }
+        }
+    }
+
+    @Test func aMazeWithAPocketBehindTheFinishKeepsStarsOutOfIt() {
+        // start(0,0) - (0,1) - finish(0,2) - (0,3) - (1,3): everything past the finish is off limits.
+        var maze = Maze(rows: 2, columns: 4, start: GridPoint(row: 0, column: 0), finish: GridPoint(row: 0, column: 2))
+        maze.openPassage(from: GridPoint(row: 0, column: 0), .right)
+        maze.openPassage(from: GridPoint(row: 0, column: 1), .right)
+        maze.openPassage(from: GridPoint(row: 0, column: 2), .right)
+        maze.openPassage(from: GridPoint(row: 0, column: 3), .down)
+        maze.openPassage(from: GridPoint(row: 0, column: 0), .down)
+        let playable = StarPlacement.playableCells(in: maze)
+        #expect(!playable.contains(GridPoint(row: 0, column: 3)))
+        #expect(!playable.contains(GridPoint(row: 1, column: 3)))
+        #expect(playable.contains(GridPoint(row: 1, column: 0)))
+        for seed in 0..<20 as Range<UInt64> {
+            var seeded = Maze(rows: 2, columns: 4, start: maze.start, finish: maze.finish, seed: seed)
+            for index in 0..<maze.cellCount {
+                let point = maze.point(at: index)
+                for direction in [MazeDirection.right, .down] where maze[point].isOpen(direction) { seeded.openPassage(from: point, direction) }
+            }
+            let stars = StarPlacement.cells(in: seeded, count: 10)
+            #expect(stars.isSubset(of: [GridPoint(row: 0, column: 1), GridPoint(row: 1, column: 0)]))
+        }
+    }
+
+    @Test func aGoldRunIsPossibleInEveryMaze() throws {
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<40 as Range<UInt64> {
+                let session = MazeGameSession(difficulty: difficulty, seed: seed, defaults: isolatedDefaults())
+                for star in session.stars.sorted(by: { ($0.row, $0.column) < ($1.row, $1.column) }) {
+                    walk(session, to: star)
+                }
+                #expect(!session.isComplete, "\(difficulty) seed \(seed) ended before every star was collected")
+                #expect(session.uncollectedStars.isEmpty, "\(difficulty) seed \(seed) left stars behind")
+                walk(session, to: session.maze.finish)
+                #expect(session.lastReward?.isGold == true)
+            }
+        }
+    }
+
     @Test func starsGiveNothingAwayAboutTheRoute() throws {
         // If stars avoided (or favoured) the winning route, the share of stars on it would
         // differ from the share of cells on it. Over many mazes the two must agree.
@@ -989,7 +1042,7 @@ struct MazeEngineTests {
             starsOnRoute += Double(stars.filter { route.contains($0) }.count)
             totalStars += Double(stars.count)
             routeCells += Double(route.count - 2)       // minus start and finish
-            freeCells += Double(maze.cellCount - 2)
+            freeCells += Double(StarPlacement.playableCells(in: maze).count - 1)   // minus the start (the finish is not playable ground)
         }
         let starShare = starsOnRoute / totalStars
         let cellShare = routeCells / freeCells
@@ -1218,6 +1271,51 @@ struct MazeEngineTests {
         }
         let record = try #require(session.collection.progress.finishes.first)
         #expect(record.seconds == Double(2 * (route.count - 2)), "two seconds between each of the moves")
+    }
+
+    // MARK: - Difficulty memory
+
+    @Test func theChosenDifficultyIsRememberedBetweenLaunches() {
+        let defaults = isolatedDefaults()
+        #expect(MazeGameSession(defaults: defaults).difficulty == .beginner, "a first launch starts on Beginner")
+        let session = MazeGameSession(defaults: defaults)
+        session.newMaze(difficulty: .hard)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .hard)
+        // Changing it again replaces the memory.
+        session.newMaze(difficulty: .easy)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .easy)
+    }
+
+    @Test func aNewMazeWithoutAChoiceKeepsTheRememberedDifficulty() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(defaults: defaults)
+        session.newMaze(difficulty: .medium)
+        session.newMaze()
+        session.newMaze()
+        #expect(session.difficulty == .medium)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .medium)
+    }
+
+    @Test func theMazeAtLaunchUsesTheRememberedDifficulty() {
+        let defaults = isolatedDefaults()
+        MazeGameSession(defaults: defaults).newMaze(difficulty: .hard)
+        let launched = MazeGameSession(defaults: defaults)
+        #expect(launched.maze.cellCount == MazeDifficulty.hard.cellCount)
+        #expect(launched.stars.count == MazeDifficulty.hard.collectibleCount)
+    }
+
+    @Test func anExplicitDifficultyOverridesTheMemoryWithoutChangingIt() {
+        let defaults = isolatedDefaults()
+        MazeGameSession(defaults: defaults).newMaze(difficulty: .hard)
+        let forced = MazeGameSession(difficulty: .easy, defaults: defaults)
+        #expect(forced.difficulty == .easy)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .hard, "the saved choice is untouched")
+    }
+
+    @Test func aDamagedSavedDifficultyFallsBackToBeginner() {
+        let defaults = isolatedDefaults()
+        defaults.set("impossible", forKey: MazeGameSession.difficultyKey)
+        #expect(MazeGameSession(defaults: defaults).difficulty == .beginner)
     }
 
     // MARK: - Stress

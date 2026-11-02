@@ -58,6 +58,7 @@ final class MazeGameSession {
     }
 
     static let soundKey = "soundEnabled"
+    static let difficultyKey = "difficulty"
     static let voiceKey = "voiceEnabled"
     static let demoSeenKey = "demoSeen"
     static let completedKey = "completedMazes"
@@ -71,13 +72,17 @@ final class MazeGameSession {
     private var isDragLive = false
 
     init(
-        difficulty: MazeDifficulty = .beginner,
+        difficulty: MazeDifficulty? = nil,
         seed: UInt64 = .random(in: .min ... .max),
         sounds: any SoundPlaying = SilentSounds(),
         defaults: UserDefaults = .standard,
         collection: CollectionStore? = nil,
         clock: @escaping () -> Date = Date.init
     ) {
+        // An explicit difficulty wins; otherwise pick up where the player left off.
+        let difficulty = difficulty
+            ?? defaults.string(forKey: Self.difficultyKey).flatMap(MazeDifficulty.init(rawValue:))
+            ?? .beginner
         let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
         self.sounds = sounds
         self.defaults = defaults
@@ -168,7 +173,10 @@ final class MazeGameSession {
     // MARK: - Starting over
 
     func newMaze(difficulty: MazeDifficulty? = nil, seed: UInt64 = .random(in: .min ... .max)) {
-        if let difficulty { self.difficulty = difficulty }
+        if let difficulty {
+            self.difficulty = difficulty
+            defaults.set(difficulty.rawValue, forKey: Self.difficultyKey)
+        }
         self.seed = seed
         maze = makeMaze(seed: seed)
         placeStars()

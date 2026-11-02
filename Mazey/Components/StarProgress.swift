@@ -14,13 +14,14 @@ struct StarProgress: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<total, id: \.self) { index in
+                // Gold either way, so the empty ones read as stars still to find, not as disabled.
                 Image(systemName: index < collected ? "star.fill" : "star")
-                    .foregroundStyle(index < collected ? Color(red: 1.0, green: 0.8, blue: 0.1) : .secondary)
+                    .foregroundStyle(Color(red: 0.95, green: 0.72, blue: 0.0))
                     .scaleEffect(index < collected ? 1 : 0.85)
                     .animation(.spring(duration: 0.35, bounce: 0.6), value: collected)
             }
         }
-        .font(.callout)
+        .font(.title3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(collected) of \(total) stars collected")
     }

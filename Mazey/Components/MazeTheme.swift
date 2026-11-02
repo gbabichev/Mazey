@@ -27,7 +27,8 @@ nonisolated struct MazeTheme: Identifiable, Sendable {
     let playerEmoji: String
     let startEmoji: String
     let finishEmoji: String
-    /// Scenery scattered at random over the maze cells and the background.
+    /// Scenery scattered around the maze in the background (never inside it, where it would
+    /// compete with the collectible stars).
     let decorations: [String]
     /// The stickers that can be earned in this theme, in the order they are handed out.
     let stickers: [Sticker]

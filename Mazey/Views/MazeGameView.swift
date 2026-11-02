@@ -26,8 +26,16 @@ struct MazeGameView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 6) {
             mazeArea
+            // Not a control, so it lives with the maze instead of in the toolbar.
+            if !session.stars.isEmpty {
+                StarProgress(collected: session.collectedStars.count, total: session.stars.count)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 6)
+            }
         }
         .background {
             ThemeBackdrop(theme: session.theme, seed: session.maze.seed)
@@ -80,9 +88,6 @@ struct MazeGameView: View {
                 Image(systemName: "gearshape.fill")
             }
             .accessibilityLabel("Settings")
-        }
-        ToolbarItem(placement: .principal) {
-            StarProgress(collected: session.collectedStars.count, total: session.stars.count)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button {

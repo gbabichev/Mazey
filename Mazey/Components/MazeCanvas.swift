@@ -30,7 +30,6 @@ struct MazeCanvas: View {
             let layout = MazeLayout(maze: maze, in: size)
             Self.drawFloor(&context, layout, theme)
             Self.drawEndpointTints(&context, maze, layout, theme)
-            Self.drawScenery(&context, maze, route, layout, theme)
             Self.drawStars(&context, stars, layout)
             Self.drawHint(&context, hint, hintLevel, layout, theme)
             Self.drawRoute(&context, route, layout, theme)
@@ -178,32 +177,6 @@ struct MazeCanvas: View {
             let rect = CGRect(x: -pill.width / 2, y: -pill.height / 2, width: pill.width, height: pill.height)
             layer.fill(Path(roundedRect: rect, cornerRadius: pill.height / 2), with: .color(tint))
             layer.draw(text, at: .zero, anchor: .center)
-        }
-    }
-
-    /// Share of cells (out of 100) that get a piece of scenery.
-    private nonisolated static let sceneryChance = 28
-
-    /// Themed scenery scattered over random cells, chosen from the maze seed so it stays put.
-    /// Placement ignores the maze's structure, so the scenery never hints at the winning
-    /// path or at dead ends. Cells the player has already walked through are left clear.
-    private nonisolated static func drawScenery(
-        _ context: inout GraphicsContext,
-        _ maze: Maze,
-        _ route: [GridPoint],
-        _ layout: MazeLayout,
-        _ theme: MazeTheme
-    ) {
-        guard !theme.decorations.isEmpty else { return }
-        let visited = Set(route)
-        for index in 0..<maze.cellCount {
-            let point = maze.point(at: index)
-            var rng = SeededGenerator(seed: maze.seed ^ UInt64(index + 1) &* 0x9E37_79B9)
-            guard rng.next(below: 100) < sceneryChance,
-                  point != maze.start, point != maze.finish, !visited.contains(point)
-            else { continue }
-            let emoji = theme.decorations[rng.next(below: theme.decorations.count)]
-            drawEmoji(&context, emoji, at: layout.center(of: point), size: layout.cellSize * 0.42)
         }
     }
 
