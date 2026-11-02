@@ -130,6 +130,7 @@ struct MazeGameView: View {
                     hintLevel: session.hintLevel,
                     theme: session.theme,
                     showsPlayer: !session.isDemoVisible,
+                    head: session.head,
                     stars: session.uncollectedStars
                 )
                 .frame(width: frame.width, height: frame.height)

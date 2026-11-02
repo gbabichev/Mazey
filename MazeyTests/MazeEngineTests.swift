@@ -1077,6 +1077,20 @@ struct MazeEngineTests {
                            starsCollected: stars, starsTotal: total, seed: seed, now: date)
     }
 
+    @Test func theCharacterGlidesAlongTheCorridorWhileDragging() throws {
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        let (a, b) = (session.maze.unitCenter(of: route[0]), session.maze.unitCenter(of: route[1]))
+        // Press on the start, then move a third of the way to the next cell.
+        session.drag(from: a, to: a)
+        session.drag(from: a, to: CGPoint(x: a.x + (b.x - a.x) / 3, y: a.y + (b.y - a.y) / 3))
+        let head = try #require(session.head)
+        #expect(session.path.end == route[0], "not yet across")
+        #expect(abs(head.point.x - (a.x + (b.x - a.x) / 3)) < 0.01 && abs(head.point.y - (a.y + (b.y - a.y) / 3)) < 0.01)
+        session.endDrag()
+        #expect(session.head == nil)
+    }
+
     @Test func parentGateSumsAreHardForChildrenAndHaveOneRightAnswer() {
         var generator = SeededGenerator(seed: 9)
         for _ in 0..<200 {

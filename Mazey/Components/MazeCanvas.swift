@@ -15,6 +15,8 @@ struct MazeCanvas: View {
     let theme: MazeTheme
     /// False while the demo is showing: it draws the moving character itself.
     var showsPlayer = true
+    /// Where the player is between cells while a pointer is down, so it glides instead of snapping.
+    var head: PathHead?
     /// Stars still waiting to be collected.
     var stars: Set<GridPoint> = []
 
@@ -25,6 +27,7 @@ struct MazeCanvas: View {
         let hintLevel = hintLevel
         let theme = theme
         let showsPlayer = showsPlayer
+        let head = head
         let stars = stars
         Canvas { context, size in
             let layout = MazeLayout(maze: maze, in: size)
@@ -41,7 +44,7 @@ struct MazeCanvas: View {
             }
             Self.drawStars(&context, stars, layout)
             Self.drawHint(&context, hint, hintLevel, layout, theme)
-            Self.drawRoute(&context, route, layout, theme)
+            Self.drawRoute(&context, route, head, layout, theme)
             switch maze.style {
             case .circular:
                 Self.drawCircularWalls(&context, maze, layout, theme)
@@ -56,7 +59,8 @@ struct MazeCanvas: View {
                 Self.drawLabels(&context, maze, layout, theme)
             }
             if showsPlayer, let end = route.last {
-                Self.drawEmoji(&context, theme.playerEmoji, at: layout.center(of: end), size: layout.glyphSize * 0.62)
+                let position = head.map { layout.screenPoint(forUnit: $0.point) } ?? layout.center(of: end)
+                Self.drawEmoji(&context, theme.playerEmoji, at: position, size: layout.glyphSize * 0.62)
             }
         }
         .accessibilityLabel("Maze")
@@ -112,10 +116,21 @@ struct MazeCanvas: View {
         )
     }
 
-    private nonisolated static func drawRoute(_ context: inout GraphicsContext, _ route: [GridPoint], _ layout: MazeLayout, _ theme: MazeTheme) {
-        guard route.count > 1 else { return }
+    private nonisolated static func drawRoute(
+        _ context: inout GraphicsContext,
+        _ route: [GridPoint],
+        _ head: PathHead?,
+        _ layout: MazeLayout,
+        _ theme: MazeTheme
+    ) {
+        // The line runs to the character: out of the end cell, or back from it when undoing a step.
+        var cells = route
+        if head?.towardPrevious == true, cells.count >= 2 { cells.removeLast() }
+        var points = layout.polyline(for: cells)
+        if let head { points.append(layout.screenPoint(forUnit: head.point)) }
+        guard points.count > 1 else { return }
         context.stroke(
-            smoothPath(through: layout.polyline(for: route)),
+            smoothPath(through: points),
             with: .color(theme.path),
             style: StrokeStyle(lineWidth: layout.glyphSize * 0.36, lineCap: .round, lineJoin: .round)
         )

@@ -143,4 +143,38 @@ nonisolated struct MazePath: Equatable, Sendable {
         cells = [start]
         visited = [start]
     }
+
+    /// Where the character is drawn while a pointer is down: not snapped to the middle of the
+    /// end cell, but slid along the corridor towards where the pointer is, so it moves
+    /// smoothly. Nil when the pointer is not near a corridor leading out of the end cell.
+    func head(for pointer: CGPoint, in maze: Maze) -> PathHead? {
+        let here = maze.unitCenter(of: end)
+        let previous = cells.count >= 2 ? cells[cells.count - 2] : nil
+        var best: (head: PathHead, gap: CGFloat)?
+        let candidates = maze.openNeighbors(of: end).filter { !visited.contains($0) || $0 == previous }
+        for candidate in candidates {
+            let there = maze.unitCenter(of: candidate)
+            let (dx, dy) = (there.x - here.x, there.y - here.y)
+            let lengthSquared = dx * dx + dy * dy
+            guard lengthSquared > 0 else { continue }
+            let along = ((pointer.x - here.x) * dx + (pointer.y - here.y) * dy) / lengthSquared
+            // Past the halfway point the path has already moved on to the next cell.
+            let t = min(max(along, 0), 0.5)
+            let point = CGPoint(x: here.x + dx * t, y: here.y + dy * t)
+            let gap = hypot(pointer.x - point.x, pointer.y - point.y)
+            if gap < (best?.gap ?? .infinity) {
+                best = (PathHead(point: point, towardPrevious: candidate == previous && t > 0), gap)
+            }
+        }
+        guard let best, best.head.point != here, best.gap <= Self.reach else { return nil }
+        return best.head
+    }
+}
+
+/// The character's position part-way along the corridor out of the end cell, in maze units.
+nonisolated struct PathHead: Equatable, Sendable {
+    var point: CGPoint
+    /// The head is on the way back to the previous cell, so the last step of the path is
+    /// being undone rather than extended.
+    var towardPrevious: Bool
 }

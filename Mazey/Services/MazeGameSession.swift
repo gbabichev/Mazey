@@ -30,6 +30,9 @@ final class MazeGameSession {
     /// The sticker book and the history of finished mazes.
     let collection: CollectionStore
 
+    /// While a pointer is down, where the character is between cells (see `MazePath.head`).
+    private(set) var head: PathHead?
+
     @ObservationIgnored private var timer = ActivityTimer()
     @ObservationIgnored private let clock: () -> Date
 
@@ -239,6 +242,7 @@ final class MazeGameSession {
     }
 
     private func resetRoute() {
+        head = nil
         path.reset(to: maze.start)
         collectedStars = []
         timer.reset()
@@ -286,15 +290,18 @@ final class MazeGameSession {
                 y: previous.y + (current.y - previous.y) * t
             ))
         }
+        head = isComplete ? nil : path.head(for: current, in: maze)
     }
 
     func endDrag() {
         isDragLive = false
+        head = nil
     }
 
     /// Keyboard movement: one step, or back one step if the key points at the previous cell.
     func step(_ direction: MazeDirection) {
         guard !isComplete else { return }
+        head = nil
         dismissDemo()
         let before = path.cells.count
         if let target = keyTarget(for: direction) {
