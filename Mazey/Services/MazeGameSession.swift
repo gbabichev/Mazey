@@ -34,6 +34,7 @@ final class MazeGameSession {
     private(set) var head: PathHead?
 
     @ObservationIgnored private var timer = ActivityTimer()
+    @ObservationIgnored private var hintFade: Task<Void, Never>?
     @ObservationIgnored private let clock: () -> Date
 
     /// Whether sound effects play. Remembered between launches.
@@ -247,7 +248,7 @@ final class MazeGameSession {
         collectedStars = []
         timer.reset()
         lastReward = nil
-        hintLevel = nil
+        clearHint()
         isComplete = false
         isDragLive = false
     }
@@ -270,7 +271,31 @@ final class MazeGameSession {
         } else {
             hintLevel = .small
         }
-        if let hintLevel { play(.hint(hintLevel)) }
+        if let hintLevel {
+            play(.hint(hintLevel))
+            scheduleHintFade()
+        } else {
+            hintFade?.cancel()
+        }
+    }
+
+    /// How long a hint stays up. Each tap asks for more, but a hint that is left alone, or that
+    /// the player moves on from, goes away by itself, so a small hint never has to be stepped
+    /// through the bigger ones to get rid of it.
+    static let hintDuration: Duration = .seconds(5)
+
+    private func scheduleHintFade() {
+        hintFade?.cancel()
+        hintFade = Task { [weak self] in
+            try? await Task.sleep(for: Self.hintDuration)
+            guard !Task.isCancelled else { return }
+            self?.hintLevel = nil
+        }
+    }
+
+    private func clearHint() {
+        hintFade?.cancel()
+        hintLevel = nil
     }
 
     // MARK: - Input
@@ -346,6 +371,7 @@ final class MazeGameSession {
 
     /// Starts or advances the clock, and picks up any stars the path just reached.
     private func noteProgress(from previousLength: Int) {
+        if path.cells.count != previousLength { clearHint() }
         timer.record(at: clock())
         guard path.cells.count > previousLength else { return }
         for cell in path.cells[previousLength...] where stars.contains(cell) && !collectedStars.contains(cell) {

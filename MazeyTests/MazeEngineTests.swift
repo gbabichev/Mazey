@@ -266,6 +266,32 @@ struct MazeEngineTests {
         #expect(session.path == before)
     }
 
+    @Test func aHintGoesAwayWhenThePlayerMovesOn() throws {
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
+        session.requestHint()
+        #expect(session.hintLevel == .small)
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        dragAlong(Array(route.prefix(2)), in: session)
+        #expect(session.path.cells.count == 2)
+        #expect(session.hintLevel == nil, "moving takes the hint away without stepping through the bigger ones")
+        session.requestHint()
+        #expect(session.hintLevel == .small, "and the next hint starts small again")
+    }
+
+    @Test func aHintFadesByItself() async throws {
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
+        session.requestHint()
+        #expect(session.hintLevel == .small)
+        // Other tests can keep the machine busy, so wait for the fade instead of a fixed time.
+        var waited = Duration.zero
+        while session.hintLevel != nil, waited < .seconds(30) {
+            try await Task.sleep(for: .milliseconds(250))
+            waited += .milliseconds(250)
+        }
+        #expect(session.hintLevel == nil)
+        #expect(waited >= MazeGameSession.hintDuration - .seconds(1), "not before its time")
+    }
+
     // MARK: - Dynamic grids
 
     private let spaces: [CGSize] = [
