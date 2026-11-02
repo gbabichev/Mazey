@@ -72,18 +72,19 @@ final class SoundEngine: SoundPlaying {
         }
     }
 
-    /// Sets up the ambient session and activates it without blocking the main thread:
-    /// activating can take a while as the system brings up audio. The asynchronous API arrived
-    /// in iOS 27; before that the same call runs on a background queue.
+    /// Sets up the ambient session and activates it, all off the main thread: changing the
+    /// category or activating can block while the system brings up audio (and changing the
+    /// category can block longer once the session is active). Activation uses the asynchronous
+    /// API where it exists (iOS 27); before that it is the same call on the background queue.
     private func activateSession() {
         #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-        if #available(iOS 27.0, *) {
-            session.activate(options: []) { @Sendable _, _ in }
-        } else {
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? AVAudioSession.sharedInstance().setActive(true)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            if #available(iOS 27.0, *) {
+                session.activate(options: []) { @Sendable _, _ in }
+            } else {
+                try? session.setActive(true)
             }
         }
         #endif
