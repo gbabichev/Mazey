@@ -43,8 +43,9 @@ struct MazeCanvas: View {
                 Self.drawEndpointTints(&context, maze, layout, theme)
             }
             Self.drawStars(&context, stars, layout)
-            Self.drawHint(&context, hint, hintLevel, layout, theme)
             Self.drawRoute(&context, route, head, layout, theme)
+            // On top of the route: a hint back along the player's own trail would be hidden under it.
+            Self.drawHint(&context, hint, hintLevel, layout, theme)
             switch maze.style {
             case .circular:
                 Self.drawCircularWalls(&context, maze, layout, theme)
@@ -145,16 +146,17 @@ struct MazeCanvas: View {
     ) {
         guard hint.count > 1 else { return }
         let width = layout.glyphSize * 0.2
-        context.stroke(
-            smoothPath(through: layout.polyline(for: hint)),
-            with: .color(theme.hint),
-            style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: [width * 0.1, width * 1.8])
-        )
+        let line = smoothPath(through: layout.polyline(for: hint))
+        let dash = [width * 0.1, width * 1.8]
+        // A white halo keeps the dots visible over the player's own route and over any theme colour.
+        context.stroke(line, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: width * 1.5, lineCap: .round, lineJoin: .round, dash: dash))
+        context.stroke(line, with: .color(theme.hint), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: dash))
         if level == .small, let next = hint.last {
             let radius = layout.glyphSize * 0.22
             let center = layout.center(of: next)
             let circle = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
             context.fill(Path(ellipseIn: circle), with: .color(theme.hint))
+            context.stroke(Path(ellipseIn: circle), with: .color(.white), lineWidth: max(2, radius * 0.25))
         }
     }
 
