@@ -10,23 +10,23 @@ struct MazeGameView: View {
     @State private var session = MazeGameSession()
     @State private var lastDragLocation: CGPoint?
     @FocusState private var isFocused: Bool
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        VStack(spacing: 16) {
-            topBar
-            mazeArea
-            Button {
-                withAnimation { session.newMaze() }
-            } label: {
-                Label("New Maze", systemImage: "sparkles")
-                    .font(.title2.weight(.bold))
-                    .frame(maxWidth: 320)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            .tint(MazePalette.player)
+        NavigationStack {
+            content
+                .toolbar { toolbarContent }
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                #endif
         }
-        .padding()
+    }
+
+    private var content: some View {
+        VStack(spacing: 16) {
+            mazeArea
+        }
         .background(
             LinearGradient(
                 colors: [MazePalette.backgroundTop, MazePalette.backgroundBottom],
@@ -35,6 +35,8 @@ struct MazeGameView: View {
             )
             .ignoresSafeArea()
         )
+        #if os(macOS)
+        // Arrow-key play. Skipped on iOS, where a focusable view summons the on-screen keyboard.
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -44,12 +46,14 @@ struct MazeGameView: View {
             session.step(direction)
             return .handled
         }
+        #endif
     }
 
     // MARK: - Pieces
 
-    private var topBar: some View {
-        HStack(spacing: 12) {
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
             Picker("Difficulty", selection: Binding(
                 get: { session.difficulty },
                 set: { session.newMaze(difficulty: $0) }
@@ -60,42 +64,44 @@ struct MazeGameView: View {
             }
             .pickerStyle(.menu)
             .accessibilityLabel("Difficulty")
-
-            Spacer(minLength: 0)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                withAnimation { session.newMaze() }
+            } label: {
+                Image(systemName: "sparkles")
+            }
+            .tint(MazePalette.player)
+            .accessibilityLabel("New maze")
 
             Button {
                 session.restart()
             } label: {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.title2.weight(.bold))
-                    .frame(width: 44, height: 44)
             }
-            .buttonStyle(.bordered)
             .accessibilityLabel("Start over")
 
             Button {
                 session.requestHint()
             } label: {
                 Image(systemName: session.hintLevel == nil ? "lightbulb" : "lightbulb.fill")
-                    .font(.title2.weight(.bold))
-                    .frame(width: 44, height: 44)
             }
-            .buttonStyle(.borderedProminent)
             .tint(MazePalette.hint)
-            .foregroundStyle(.black.opacity(0.75))
             .accessibilityLabel("Hint")
         }
     }
 
     private var mazeArea: some View {
         GeometryReader { geometry in
-            let layout = MazeLayout(rows: session.maze.rows, columns: session.maze.columns, in: geometry.size)
+            let frame = mazeFrame(in: geometry)
+            let layout = MazeLayout(rows: session.maze.rows, columns: session.maze.columns, in: frame.size)
             MazeCanvas(
                 maze: session.maze,
                 route: session.path.cells,
                 hint: session.hintCells,
                 hintLevel: session.hintLevel
             )
+            .frame(width: frame.width, height: frame.height)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -119,7 +125,36 @@ struct MazeGameView: View {
                 }
             }
             .animation(.spring(duration: 0.5), value: session.isComplete)
+            .offset(y: frame.minY)
         }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+    }
+
+    /// Side space the maze must keep free before it may extend under the top bar, so it never
+    /// sits under toolbar buttons. Wide (regular) windows also show status bar text such as
+    /// the date and app name along the top edge, which needs more room.
+    private var toolbarClearance: CGFloat {
+        horizontalSizeClass == .regular ? 240 : 100
+    }
+
+    /// The area the maze may use. It always respects the safe area, except that when the
+    /// screen is wide enough for the maze to stay clear of the toolbar items on both sides
+    /// (landscape iPad, iPhone, iPhone Duo), it may extend up under the empty top bar.
+    private func mazeFrame(in geometry: GeometryProxy) -> CGRect {
+        let size = geometry.size
+        #if os(iOS)
+        let top = geometry.safeAreaInsets.top
+        let extended = CGSize(width: size.width, height: size.height + top)
+        let full = MazeLayout(rows: session.maze.rows, columns: session.maze.columns, in: extended)
+        let sideSpace = (size.width - full.mazeRect.width) / 2
+        if sideSpace >= toolbarClearance {
+            return CGRect(x: 0, y: -top, width: size.width, height: size.height + top)
+        }
+        return CGRect(origin: .zero, size: size)
+        #else
+        return CGRect(origin: .zero, size: size)
+        #endif
     }
 
     private func direction(for key: KeyEquivalent) -> MazeDirection? {

@@ -17,7 +17,7 @@ nonisolated struct MazeLayout: Sendable {
     init(rows: Int, columns: Int, in size: CGSize) {
         self.rows = rows
         self.columns = columns
-        let margin: CGFloat = 8
+        let margin: CGFloat = 16
         let available = CGSize(width: max(1, size.width - margin * 2), height: max(1, size.height - margin * 2))
         cellSize = min(available.width / CGFloat(columns), available.height / CGFloat(rows))
         origin = CGPoint(

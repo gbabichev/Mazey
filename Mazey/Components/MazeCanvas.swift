@@ -36,8 +36,10 @@ struct MazeCanvas: View {
     // MARK: - Layers
 
     private nonisolated static func drawFloor(_ context: inout GraphicsContext, _ layout: MazeLayout) {
-        let rect = layout.mazeRect.insetBy(dx: -layout.wallWidth, dy: -layout.wallWidth)
-        context.fill(Path(roundedRect: rect, cornerRadius: layout.cellSize * 0.3), with: .color(MazePalette.paper))
+        // Flush with the outer edge of the border walls, whose corners are round with radius wallWidth / 2.
+        let half = layout.wallWidth / 2
+        let rect = layout.mazeRect.insetBy(dx: -half, dy: -half)
+        context.fill(Path(roundedRect: rect, cornerRadius: half), with: .color(MazePalette.paper))
     }
 
     private nonisolated static func drawEndpointTints(_ context: inout GraphicsContext, _ maze: Maze, _ layout: MazeLayout) {
