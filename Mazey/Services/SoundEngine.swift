@@ -19,7 +19,6 @@ final class SoundEngine: SoundPlaying {
     private var nextPlayer = 0
     private var buffers: [SoundEffect: AVAudioPCMBuffer] = [:]
     private var lastStepTime: ContinuousClock.Instant?
-    private var sessionConfigured = false
 
     /// Step sounds closer together than this are skipped, so a fast drag stays musical.
     private let minimumStepGap: Duration = .milliseconds(45)
@@ -33,11 +32,12 @@ final class SoundEngine: SoundPlaying {
             engine.connect(player, to: engine.mainMixerNode, format: format)
             players.append(player)
         }
+        // Start activating the audio session now, so it is ready before the first sound.
+        activateSession()
     }
 
     func play(_ effect: SoundEffect) {
         if !shouldPlay(effect) { return }
-        configureSessionIfNeeded()
         guard startEngineIfNeeded() else { return }
         let player = players[nextPlayer]
         nextPlayer = (nextPlayer + 1) % players.count
@@ -60,13 +60,20 @@ final class SoundEngine: SoundPlaying {
         }
     }
 
-    private func configureSessionIfNeeded() {
-        guard !sessionConfigured else { return }
-        sessionConfigured = true
+    /// Sets up the ambient session and activates it without blocking the main thread:
+    /// activating can take a while as the system brings up audio. The asynchronous API arrived
+    /// in iOS 27; before that the same call runs on a background queue.
+    private func activateSession() {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-        try? session.setActive(true)
+        if #available(iOS 27.0, *) {
+            session.activate(options: []) { @Sendable _, _ in }
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? AVAudioSession.sharedInstance().setActive(true)
+            }
+        }
         #endif
     }
 
@@ -77,6 +84,8 @@ final class SoundEngine: SoundPlaying {
             try engine.start()
             return true
         } catch {
+            // Usually the session was deactivated by an interruption. Reactivate it for the next sound.
+            activateSession()
             return false
         }
     }
