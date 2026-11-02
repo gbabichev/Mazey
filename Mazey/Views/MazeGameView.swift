@@ -150,7 +150,7 @@ struct MazeGameView: View {
                 .overlay {
                     if session.isDemoVisible {
                         DemoFinger(
-                            points: session.demoRoute.map(layout.center(of:)),
+                            points: layout.polyline(for: session.demoRoute),
                             cellSize: layout.cellSize,
                             playerEmoji: session.theme.playerEmoji,
                             trailColor: session.theme.path,

@@ -1318,6 +1318,305 @@ struct MazeEngineTests {
         #expect(MazeGameSession(defaults: defaults).difficulty == .beginner)
     }
 
+    // MARK: - Circular mazes
+
+    private let roomySpace = MazeSpace(size: CGSize(width: 800, height: 700))
+
+    /// Walks a session along `route` the way a finger would, one cell centre to the next.
+    private func dragAlong(_ route: [GridPoint], in session: MazeGameSession) {
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: session.maze.unitCenter(of: from), to: session.maze.unitCenter(of: to))
+        }
+    }
+
+    @Test func ringSizesGrowOutwardAndMatchTheDifficultyTargets() {
+        #expect(CircularShape.ringSizes(rings: 3) == [1, 6, 12, 24])
+        for rings in 1...CircularShape.maximumRings {
+            let sizes = CircularShape.ringSizes(rings: rings)
+            #expect(sizes.count == rings + 1 && sizes[0] == 1)
+            for (inner, outer) in zip(sizes.dropFirst(), sizes.dropFirst(2)) {
+                #expect(outer == inner || outer == inner * 2, "a ring either keeps or doubles its cells")
+            }
+            #expect(CircularShape.totalCells(rings: rings) == sizes.reduce(0, +))
+        }
+        for difficulty in MazeDifficulty.allCases {
+            let total = CircularShape.totalCells(rings: CircularShape.rings(forCellCount: difficulty.cellCount))
+            #expect(abs(Double(total - difficulty.cellCount)) / Double(difficulty.cellCount) <= 0.25, "\(difficulty): \(total) cells")
+        }
+    }
+
+    @Test func circularGeometryIsConsistent() {
+        for rings in 1...CircularShape.maximumRings {
+            let geometry = MazeGeometry(ringSizes: CircularShape.ringSizes(rings: rings))
+            for index in 0..<geometry.cellCount {
+                let point = geometry.point(at: index)
+                #expect(geometry.index(of: point) == index)
+                #expect(geometry.contains(point))
+                #expect(geometry.cell(containing: geometry.unitCenter(of: point)) == point, "\(point) at \(rings) rings")
+                #expect(geometry.distance(from: geometry.unitCenter(of: point), to: point) < 0.001)
+                // Neighbours are mutual.
+                for adjacent in geometry.adjacentCells(of: point) {
+                    #expect(geometry.adjacentCells(of: adjacent.point).contains { $0.point == point })
+                }
+            }
+            #expect(!geometry.contains(GridPoint(row: rings + 1, column: 0)))
+            #expect(geometry.cell(containing: CGPoint(x: CircularShape.outerRadius(rings: rings) + 0.5, y: 0)) == nil)
+        }
+    }
+
+    @Test func aPointInsideACellIsWithinItsCornerDistanceOfItsCentre() {
+        let geometry = MazeGeometry(ringSizes: CircularShape.ringSizes(rings: 5))
+        var rng = SeededGenerator(seed: 5)
+        for _ in 0..<500 {
+            let radius = Double(CircularShape.outerRadius(rings: 5)) * Double(rng.next(below: 1000)) / 1000
+            let angle = 2 * Double.pi * Double(rng.next(below: 1000)) / 1000
+            let spot = CGPoint(x: radius * cos(angle), y: radius * sin(angle))
+            let home = try! #require(geometry.cell(containing: spot))
+            #expect(geometry.distance(from: spot, to: home) <= 0.75, "inside a cell is within its corner distance")
+        }
+    }
+
+    @Test func circularMazesArePerfectAndSolvable() throws {
+        for rings in 1...CircularShape.maximumRings {
+            for seed in 0..<25 as Range<UInt64> {
+                let maze = MazeGenerator.generateCircular(rings: rings, seed: seed)
+                #expect(maze.style == .circular)
+                #expect(maze.start.row == rings && maze.finish == GridPoint(row: 0, column: 0))
+                #expect(MazeSolver.reachableCells(in: maze, from: maze.start).count == maze.cellCount)
+                var ends = 0
+                for index in 0..<maze.cellCount {
+                    let point = maze.point(at: index)
+                    for neighbor in maze.openNeighbors(of: point) {
+                        #expect(maze.openNeighbors(of: neighbor).contains(point), "passages are two-way")
+                        ends += 1
+                    }
+                }
+                #expect(ends == 2 * (maze.cellCount - 1), "a perfect maze is a spanning tree")
+                let route = try #require(MazeSolver.solve(maze, from: maze.start))
+                #expect(route.first == maze.start && route.last == maze.finish)
+                for (from, to) in zip(route, route.dropFirst()) {
+                    #expect(maze.openNeighbors(of: from).contains(to), "route crosses a wall")
+                }
+            }
+        }
+    }
+
+    @Test func circularMazesAreRepeatableAndVary() {
+        #expect(MazeGenerator.generateCircular(rings: 4, seed: 9) == MazeGenerator.generateCircular(rings: 4, seed: 9))
+        #expect(MazeGenerator.generate(difficulty: .hard, seed: 3, rings: 6) == MazeGenerator.generate(difficulty: .hard, seed: 3, rings: 6))
+        let first = MazeGenerator.generateCircular(rings: 4, seed: 1)
+        #expect((2..<10 as Range<UInt64>).contains { MazeGenerator.generateCircular(rings: 4, seed: $0) != first })
+    }
+
+    @Test func circularMazesMeetTheirDifficultyCriteria() {
+        for difficulty in MazeDifficulty.allCases {
+            let rings = CircularShape.rings(forCellCount: difficulty.cellCount)
+            let criteria = difficulty.criteria(rings: rings)
+            var met = 0
+            for seed in 0..<30 as Range<UInt64> {
+                let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: rings)
+                #expect(MazeSolver.isSolvable(maze))
+                if let metrics = MazeSolver.metrics(for: maze), criteria.isSatisfied(by: metrics) { met += 1 }
+            }
+            #expect(met >= 26, "\(difficulty) met criteria \(met)/30")
+        }
+        #expect(MazeDifficulty.hard.criteria(rings: 6).minimumSolutionLength > MazeDifficulty.beginner.criteria(rings: 6).minimumSolutionLength)
+    }
+
+    @Test func aWallBlocksMovementBetweenNeighbouringRingCells() {
+        let maze = MazeGenerator.generateCircular(rings: 4, seed: 4)
+        var checked = 0
+        for index in 0..<maze.cellCount {
+            let point = maze.point(at: index)
+            for adjacent in maze.geometry.adjacentCells(of: point) where !maze.isLinked(point, adjacent.point) {
+                var path = MazePath(start: point)
+                #expect(path.move(to: adjacent.point, in: maze) == .ignored)
+                #expect(path.cells == [point])
+                checked += 1
+            }
+        }
+        #expect(checked > 50)
+    }
+
+    @Test func theCircularRouteCurvesRoundTheRings() throws {
+        let maze = MazeGenerator.generateCircular(rings: 4, seed: 2)
+        let route = try #require(MazeSolver.solve(maze, from: maze.start))
+        let line = maze.geometry.polyline(through: route)
+        #expect(line.first == maze.unitCenter(of: route.first!) && line.last == maze.unitCenter(of: route.last!))
+        #expect(line.count >= route.count)
+        // Every point of the line stays inside the maze.
+        let outer = Double(CircularShape.outerRadius(rings: 4))
+        #expect(line.allSatisfy { Double(hypot($0.x, $0.y)) <= outer })
+    }
+
+    @Test func followingACircularSolutionReachesTheHub() throws {
+        for rings in [2, 3, 5, 6] {
+            for seed in 0..<20 as Range<UInt64> {
+                let maze = MazeGenerator.generateCircular(rings: rings, seed: seed)
+                var path = MazePath(start: maze.start)
+                for cell in try #require(MazeSolver.solve(maze, from: maze.start)).dropFirst() {
+                    #expect(path.move(to: cell, in: maze) == .appended)
+                }
+                #expect(path.end == maze.finish)
+            }
+        }
+    }
+
+    /// Moves a pointer along the maze's winning route the way a finger would: smoothly round the
+    /// rings, in small steps, drifting off the line by up to `wobble` of a ring's thickness in
+    /// each direction. Returns whether the session finished.
+    private func wobblyFinger(_ session: MazeGameSession, wobble: Double, seed: UInt64) throws -> Bool {
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        let line = session.maze.geometry.polyline(through: route)
+        var rng = SeededGenerator(seed: seed)
+        let phase = Double(rng.next(below: 628)) / 100
+        var travelled = 0.0
+        var previous = line[0]
+        var pointer = line[0]
+        for point in line.dropFirst() {
+            let length = hypot(point.x - previous.x, point.y - previous.y)
+            let steps = max(1, Int((length / 0.15).rounded(.up)))
+            for step in 1...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                travelled += length / Double(steps)
+                let target = CGPoint(
+                    x: previous.x + (point.x - previous.x) * t + wobble * sin(1.3 * travelled + phase),
+                    y: previous.y + (point.y - previous.y) * t + wobble * sin(1.7 * travelled + phase)
+                )
+                session.drag(from: pointer, to: target)
+                pointer = target
+            }
+            previous = point
+        }
+        return session.isComplete
+    }
+
+    @Test func aSteadyFingerAlwaysFinishesACircularMaze() throws {
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<25 as Range<UInt64> {
+                let session = MazeGameSession(difficulty: difficulty, seed: seed, defaults: isolatedDefaults())
+                session.newMaze(seed: circularSeed(from: seed, in: session))
+                #expect(session.maze.style == .circular)
+                #expect(try wobblyFinger(session, wobble: 0.0, seed: seed), "\(difficulty) seed \(seed)")
+            }
+        }
+    }
+
+    @Test func aWobblyFingerFinishesAlmostEveryCircularMaze() throws {
+        var finished = 0, total = 0
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<30 as Range<UInt64> {
+                let session = MazeGameSession(difficulty: difficulty, seed: seed, defaults: isolatedDefaults())
+                session.newMaze(seed: circularSeed(from: seed + 100, in: session))
+                total += 1
+                if try wobblyFinger(session, wobble: 0.3, seed: seed) { finished += 1 }
+            }
+        }
+        // A finger 30% of a ring's thickness off the line now and then wanders into a side
+        // branch; it must never stall, and nearly every run still gets to the hub.
+        #expect(Double(finished) / Double(total) >= 0.93, "\(finished) of \(total)")
+    }
+
+    /// A seed whose maze, in a roomy space, comes out circular.
+    private func circularSeed(from start: UInt64, in session: MazeGameSession) -> UInt64 {
+        session.updateSpace(roomySpace)
+        for seed in start..<(start + 400) {
+            session.newMaze(seed: seed)
+            if session.maze.style == .circular { return seed }
+        }
+        return start
+    }
+
+    @Test func aboutTwoInFiveMazesAreCircularInARoomySpace() {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(roomySpace)
+        var circular = 0
+        for seed in 0..<500 as Range<UInt64> {
+            session.newMaze(seed: seed)
+            if session.maze.style == .circular { circular += 1 }
+        }
+        #expect((170...230).contains(circular), "\(circular) of 500")
+    }
+
+    @Test func circularMazesAreNotUsedWhereTheyWouldBeCramped() {
+        func circularCount(in size: CGSize, difficulty: MazeDifficulty = .hard) -> Int {
+            let session = MazeGameSession(difficulty: difficulty, seed: 1, defaults: isolatedDefaults())
+            session.updateSpace(MazeSpace(size: size))
+            var count = 0
+            for seed in 0..<80 as Range<UInt64> {
+                session.newMaze(seed: seed)
+                if session.maze.style == .circular { count += 1 }
+            }
+            return count
+        }
+        #expect(circularCount(in: CGSize(width: 800, height: 700)) > 0)
+        #expect(circularCount(in: CGSize(width: 900, height: 300)) == 0, "too wide and short")
+        #expect(circularCount(in: CGSize(width: 150, height: 150)) == 0, "too small for fingers")
+        #expect(circularCount(in: CGSize(width: 420, height: 900)) == 0, "too tall and narrow")
+    }
+
+    @Test func aMazeKeepsItsStyleForItsSeed() {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(roomySpace)
+        for seed in 0..<40 as Range<UInt64> {
+            session.newMaze(seed: seed)
+            let style = session.maze.style
+            session.newMaze(seed: seed)
+            #expect(session.maze.style == style)
+        }
+    }
+
+    @Test func circularMazesGetStarsThatCanAllBeCollected() throws {
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<15 as Range<UInt64> {
+                let session = MazeGameSession(difficulty: difficulty, seed: seed, defaults: isolatedDefaults())
+                session.newMaze(seed: circularSeed(from: seed * 31, in: session))
+                #expect(session.maze.style == .circular)
+                #expect(session.stars.count == difficulty.collectibleCount)
+                #expect(session.stars.isSubset(of: StarPlacement.playableCells(in: session.maze)))
+                for star in session.stars.sorted(by: { ($0.row, $0.column) < ($1.row, $1.column) }) {
+                    if let route = MazeSolver.solve(session.maze, from: session.path.end, to: star) { dragAlong(route, in: session) }
+                }
+                #expect(!session.isComplete && session.uncollectedStars.isEmpty, "\(difficulty) seed \(seed)")
+                if let route = MazeSolver.solve(session.maze, from: session.path.end, to: session.maze.finish) { dragAlong(route, in: session) }
+                #expect(session.lastReward?.isGold == true)
+            }
+        }
+    }
+
+    @Test func arrowKeysMoveThroughACircularMaze() throws {
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: isolatedDefaults())
+        session.newMaze(seed: circularSeed(from: 0, in: session))
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        // For each step along the solution, press the arrow that points most nearly that way.
+        for (from, to) in zip(route, route.dropFirst()) {
+            let a = session.maze.unitCenter(of: from), b = session.maze.unitCenter(of: to)
+            let direction: MazeDirection = abs(b.x - a.x) > abs(b.y - a.y) ? (b.x > a.x ? .right : .left) : (b.y > a.y ? .down : .up)
+            session.step(direction)
+        }
+        // Arrow keys cannot always tell neighbours apart, but they must never break the path.
+        #expect(session.path.cells.count >= 2)
+        let cells = session.path.cells
+        for (from, to) in zip(cells, cells.dropFirst()) {
+            #expect(session.maze.openNeighbors(of: from).contains(to))
+        }
+    }
+
+    @Test func gridMazesStillWorkTheSameWayThroughTheGeometry() {
+        let maze = MazeGenerator.generate(rows: 5, columns: 7, seed: 3)
+        #expect(maze.style == .grid)
+        for index in 0..<maze.cellCount {
+            let point = maze.point(at: index)
+            let unit = maze.unitCenter(of: point)
+            #expect(unit == CGPoint(x: Double(point.column) + 0.5, y: Double(point.row) + 0.5))
+            #expect(maze.cell(containing: unit) == point)
+            #expect(maze.distance(from: unit, to: point) == 0)
+        }
+        #expect(maze.cell(containing: CGPoint(x: -0.1, y: 1)) == nil)
+        #expect(maze.cell(containing: CGPoint(x: 7, y: 1)) == nil)
+        #expect(maze.straightSteps(from: GridPoint(row: 0, column: 0), to: GridPoint(row: 2, column: 3)) == 5)
+    }
+
     // MARK: - Stress
 
     @Test func generatingThousandsOfMazesIsSafe() {

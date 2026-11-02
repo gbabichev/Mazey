@@ -28,14 +28,24 @@ struct MazeCanvas: View {
         let stars = stars
         Canvas { context, size in
             let layout = MazeLayout(maze: maze, in: size)
-            Self.drawFloor(&context, layout, theme)
-            Self.drawEndpointTints(&context, maze, layout, theme)
+            if maze.style == .circular {
+                Self.drawCircularFloor(&context, maze, layout, theme)
+                Self.drawCircularTints(&context, maze, layout, theme)
+            } else {
+                Self.drawFloor(&context, layout, theme)
+                Self.drawEndpointTints(&context, maze, layout, theme)
+            }
             Self.drawStars(&context, stars, layout)
             Self.drawHint(&context, hint, hintLevel, layout, theme)
             Self.drawRoute(&context, route, layout, theme)
-            Self.drawWalls(&context, maze, layout, theme)
-            Self.drawEndpointEmoji(&context, maze, route, layout, theme)
-            Self.drawLabels(&context, maze, layout, theme)
+            if maze.style == .circular {
+                Self.drawCircularWalls(&context, maze, layout, theme)
+                Self.drawCircularEndpoints(&context, maze, route, layout, theme)
+            } else {
+                Self.drawWalls(&context, maze, layout, theme)
+                Self.drawEndpointEmoji(&context, maze, route, layout, theme)
+                Self.drawLabels(&context, maze, layout, theme)
+            }
             if showsPlayer, let end = route.last {
                 Self.drawEmoji(&context, theme.playerEmoji, at: layout.center(of: end), size: layout.cellSize * 0.62)
             }
@@ -96,7 +106,7 @@ struct MazeCanvas: View {
     private nonisolated static func drawRoute(_ context: inout GraphicsContext, _ route: [GridPoint], _ layout: MazeLayout, _ theme: MazeTheme) {
         guard route.count > 1 else { return }
         context.stroke(
-            smoothPath(through: route.map(layout.center(of:))),
+            smoothPath(through: layout.polyline(for: route)),
             with: .color(theme.path),
             style: StrokeStyle(lineWidth: layout.cellSize * 0.36, lineCap: .round, lineJoin: .round)
         )
@@ -112,7 +122,7 @@ struct MazeCanvas: View {
         guard hint.count > 1 else { return }
         let width = layout.cellSize * 0.2
         context.stroke(
-            smoothPath(through: hint.map(layout.center(of:))),
+            smoothPath(through: layout.polyline(for: hint)),
             with: .color(theme.hint),
             style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: [width * 0.1, width * 1.8])
         )
@@ -178,6 +188,149 @@ struct MazeCanvas: View {
             layer.fill(Path(roundedRect: rect, cornerRadius: pill.height / 2), with: .color(tint))
             layer.draw(text, at: .zero, anchor: .center)
         }
+    }
+
+    // MARK: - Circular mazes
+
+    /// Where a circular maze's cell boundaries are, as points along an arc about the centre.
+    private nonisolated static func arc(about center: CGPoint, radius: CGFloat, from start: Double, to end: Double) -> [CGPoint] {
+        let steps = max(2, Int((abs(end - start) / 0.06).rounded(.up)))
+        return (0...steps).map { step in
+            let angle = start + (end - start) * Double(step) / Double(steps)
+            return CGPoint(x: center.x + radius * CGFloat(cos(angle)), y: center.y + radius * CGFloat(sin(angle)))
+        }
+    }
+
+    private nonisolated static func polygon(_ points: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        for point in points.dropFirst() { path.addLine(to: point) }
+        path.closeSubpath()
+        return path
+    }
+
+    private nonisolated static func drawCircularFloor(_ context: inout GraphicsContext, _ maze: Maze, _ layout: MazeLayout, _ theme: MazeTheme) {
+        let radius = layout.mazeRect.width / 2 + layout.wallWidth / 2
+        let rect = CGRect(x: layout.origin.x - radius, y: layout.origin.y - radius, width: radius * 2, height: radius * 2)
+        context.fill(Path(ellipseIn: rect), with: .color(theme.paper))
+    }
+
+    /// The start cell's wedge and the hub, tinted like the start and finish squares of a grid.
+    private nonisolated static func drawCircularTints(_ context: inout GraphicsContext, _ maze: Maze, _ layout: MazeLayout, _ theme: MazeTheme) {
+        let geometry = maze.geometry
+        let inset = layout.wallWidth / 2
+        let hub = CGFloat(CircularShape.hubRadius) * layout.cellSize - inset
+        let hubRect = CGRect(x: layout.origin.x - hub, y: layout.origin.y - hub, width: hub * 2, height: hub * 2)
+        context.fill(Path(ellipseIn: hubRect), with: .color(theme.finishTint.opacity(0.35)))
+
+        let ring = maze.start.row
+        let span = geometry.sectorSpan(ring: ring)
+        let first = geometry.centerAngle(of: maze.start) - span / 2
+        let outer = CGFloat(geometry.outerRadius(ring: ring)) * layout.cellSize - inset
+        let inner = CGFloat(geometry.innerRadius(ring: ring)) * layout.cellSize + inset
+        // Pull the sides in by the same inset, measured at each radius.
+        let outerPad = Double(inset / outer), innerPad = Double(inset / inner)
+        let wedge = arc(about: layout.origin, radius: outer, from: first + outerPad, to: first + span - outerPad)
+            + arc(about: layout.origin, radius: inner, from: first + span - innerPad, to: first + innerPad)
+        context.fill(polygon(wedge), with: .color(theme.startTint.opacity(0.35)))
+    }
+
+    private nonisolated static func drawCircularWalls(_ context: inout GraphicsContext, _ maze: Maze, _ layout: MazeLayout, _ theme: MazeTheme) {
+        let geometry = maze.geometry
+        let center = layout.origin
+        let lastRing = geometry.ringSizes.count - 1
+        var walls = Path()
+        func add(_ points: [CGPoint]) {
+            guard let first = points.first else { return }
+            walls.move(to: first)
+            for point in points.dropFirst() { walls.addLine(to: point) }
+        }
+        for ring in 1...lastRing {
+            let size = geometry.ringSizes[ring]
+            let span = geometry.sectorSpan(ring: ring)
+            let inner = CGFloat(geometry.innerRadius(ring: ring)) * layout.cellSize
+            let outer = CGFloat(geometry.outerRadius(ring: ring)) * layout.cellSize
+            let ratio = size / geometry.ringSizes[ring - 1]
+            for sector in 0..<size {
+                let cell = GridPoint(row: ring, column: sector)
+                let from = -Double.pi / 2 + Double(sector) * span
+                let to = from + span
+                // The wall on the hub side, unless this cell opens inward.
+                if !maze.isLinked(cell, GridPoint(row: ring - 1, column: sector / ratio)) {
+                    add(arc(about: center, radius: inner, from: from, to: to))
+                }
+                // The wall on the clockwise side, unless this cell opens to its neighbour.
+                if !maze.isLinked(cell, GridPoint(row: ring, column: (sector + 1) % size)) {
+                    add([
+                        CGPoint(x: center.x + inner * CGFloat(cos(to)), y: center.y + inner * CGFloat(sin(to))),
+                        CGPoint(x: center.x + outer * CGFloat(cos(to)), y: center.y + outer * CGFloat(sin(to))),
+                    ])
+                }
+                // The outer wall, with a gap where the maze starts.
+                if ring == lastRing, cell != maze.start {
+                    add(arc(about: center, radius: outer, from: from, to: to))
+                }
+            }
+        }
+        context.stroke(
+            walls,
+            with: .color(theme.wall),
+            style: StrokeStyle(lineWidth: layout.wallWidth, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    /// The finish in the hub with its FINISH label, the start emoji, and the START label
+    /// outside the gap in the outer wall.
+    private nonisolated static func drawCircularEndpoints(
+        _ context: inout GraphicsContext,
+        _ maze: Maze,
+        _ route: [GridPoint],
+        _ layout: MazeLayout,
+        _ theme: MazeTheme
+    ) {
+        let geometry = maze.geometry
+        let thickness = layout.cellSize
+        if route.count > 1 {
+            drawEmoji(&context, theme.startEmoji, at: layout.center(of: maze.start), size: thickness * 0.55)
+        }
+        drawEmoji(&context, theme.finishEmoji, at: CGPoint(x: layout.origin.x, y: layout.origin.y - thickness * 0.36), size: thickness * 0.95)
+
+        let fontSize = min(15, max(9, thickness * 0.55))
+        let finishPill = pill(&context, "FINISH", color: Color(red: 0.88, green: 0.22, blue: 0.32), fontSize: fontSize)
+        draw(finishPill, at: CGPoint(x: layout.origin.x, y: layout.origin.y + thickness * 0.62), in: &context)
+
+        // START sits just outside the opening, in line with it, pushed out by its own size.
+        let angle = geometry.centerAngle(of: maze.start)
+        let direction = CGPoint(x: CGFloat(cos(angle)), y: CGFloat(sin(angle)))
+        let startPill = pill(&context, "START", color: Color(red: 0.13, green: 0.62, blue: 0.32), fontSize: 15)
+        let outer = layout.mazeRect.width / 2 + layout.wallWidth / 2 + 4
+        let extent = abs(direction.x) * startPill.size.width / 2 + abs(direction.y) * startPill.size.height / 2
+        draw(
+            startPill,
+            at: CGPoint(x: layout.origin.x + direction.x * (outer + extent), y: layout.origin.y + direction.y * (outer + extent)),
+            in: &context
+        )
+    }
+
+    private nonisolated struct Pill {
+        let text: GraphicsContext.ResolvedText
+        let size: CGSize
+        let color: Color
+    }
+
+    private nonisolated static func pill(_ context: inout GraphicsContext, _ title: String, color: Color, fontSize: CGFloat) -> Pill {
+        let text = context.resolve(
+            Text(verbatim: title).font(.system(size: fontSize, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+        )
+        let measured = text.measure(in: CGSize(width: 200, height: 40))
+        return Pill(text: text, size: CGSize(width: measured.width + 18, height: measured.height + 6), color: color)
+    }
+
+    private nonisolated static func draw(_ pill: Pill, at center: CGPoint, in context: inout GraphicsContext) {
+        let rect = CGRect(x: center.x - pill.size.width / 2, y: center.y - pill.size.height / 2, width: pill.size.width, height: pill.size.height)
+        context.fill(Path(roundedRect: rect, cornerRadius: pill.size.height / 2), with: .color(pill.color))
+        context.draw(pill.text, at: center, anchor: .center)
     }
 
     /// Gold stars with a soft glow, drawn as shapes so they cannot be mistaken for the emoji scenery.

@@ -157,9 +157,22 @@ final class MazeGameSession {
         collectedStars = []
     }
 
+    /// Roughly four mazes in ten are circular, picked from the seed so a given maze keeps its
+    /// style. A circular maze needs a roomy, not-too-long space; otherwise it is a grid.
+    static let circularShare = 40
+
+    private func wantsCircular(seed: UInt64) -> Bool {
+        var rng = SeededGenerator(seed: seed ^ 0xC12C_1E5)
+        return rng.next(below: 100) < Self.circularShare
+    }
+
     /// A maze for the current difficulty, shaped to fit the screen when its space is known.
     private func makeMaze(seed: UInt64) -> Maze {
         guard let space else { return MazeGenerator.generate(difficulty: difficulty, seed: seed) }
+        if wantsCircular(seed: seed), MazeFitter.supportsCircular(cellCount: difficulty.cellCount, in: space) {
+            let rings = CircularShape.rings(forCellCount: difficulty.cellCount)
+            return MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: rings)
+        }
         let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: space)
         return MazeGenerator.generate(difficulty: difficulty, seed: seed, rows: shape.rows, columns: shape.columns)
     }
@@ -252,15 +265,37 @@ final class MazeGameSession {
         guard !isComplete else { return }
         dismissDemo()
         let before = path.cells.count
-        apply(path.move(to: path.end.moved(direction), in: maze))
+        if let target = keyTarget(for: direction) {
+            apply(path.move(to: target, in: maze))
+        }
         noteProgress(from: before)
         if path.end == maze.finish && !isComplete { finishMaze() }
         playPathSound(from: before)
     }
 
+    /// The cell an arrow key should move to. In a grid that is the cell in that direction; in a
+    /// circular maze it is the open neighbour (or the previous cell) lying most nearly that way.
+    private func keyTarget(for direction: MazeDirection) -> GridPoint? {
+        if maze.style == .grid { return path.end.moved(direction) }
+        let wanted = CGPoint(x: CGFloat(direction.columnDelta), y: CGFloat(direction.rowDelta))
+        let here = maze.unitCenter(of: path.end)
+        let previous = path.cells.count >= 2 ? path.cells[path.cells.count - 2] : nil
+        return maze.openNeighbors(of: path.end)
+            .filter { !path.contains($0) || $0 == previous }
+            .compactMap { cell -> (GridPoint, CGFloat)? in
+                let there = maze.unitCenter(of: cell)
+                let (dx, dy) = (there.x - here.x, there.y - here.y)
+                let length = hypot(dx, dy)
+                guard length > 0 else { return nil }
+                let alignment = (dx * wanted.x + dy * wanted.y) / length
+                return alignment > 0.4 ? (cell, alignment) : nil
+            }
+            .max { $0.1 < $1.1 }?.0
+    }
+
     private func visit(_ pointer: CGPoint) {
         // Touching down near the end of the path lets the drag pick up where it left off.
-        if path.isNearEnd(pointer) { isDragLive = true }
+        if path.isNearEnd(pointer, in: maze) { isDragLive = true }
         let before = path.cells.count
         let moved = path.follow(pointer, in: maze, allowRetrace: isDragLive, finish: maze.finish)
         guard moved else { return }

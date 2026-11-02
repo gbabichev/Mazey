@@ -71,6 +71,27 @@ nonisolated enum MazeFitter {
         return best.map { ($0.rows, $0.columns) } ?? (side, side)
     }
 
+    // MARK: - Circular mazes
+
+    /// A circular maze's cells must be at least this big (in points) to be worth drawing.
+    static let minimumCircularCell: CGFloat = 22
+    /// A circle wastes too much of a space this much longer than it is wide.
+    static let maximumCircularAspect: CGFloat = 1.8
+
+    /// The size of one ring's thickness a circular maze of about `cellCount` cells would have
+    /// in the best area `space` offers.
+    static func circularCellSize(cellCount: Int, in space: MazeSpace) -> CGFloat {
+        let rings = CircularShape.rings(forCellCount: cellCount)
+        return space.candidateFrames.map { MazeLayout(rings: rings, in: $0.size).cellSize }.max() ?? 0
+    }
+
+    /// True when a circular maze of about `cellCount` cells would look good in `space`.
+    static func supportsCircular(cellCount: Int, in space: MazeSpace) -> Bool {
+        let (long, short) = (max(space.size.width, space.size.height), min(space.size.width, space.size.height))
+        guard short > 0, long / short <= maximumCircularAspect else { return false }
+        return circularCellSize(cellCount: cellCount, in: space) >= minimumCircularCell
+    }
+
     /// The area inside `space` that fits `maze` best: the plain safe area, or the taller one
     /// under the top bar when that makes the cells noticeably bigger.
     static func frame(for maze: Maze, in space: MazeSpace) -> CGRect {

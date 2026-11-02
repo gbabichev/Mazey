@@ -21,18 +21,31 @@ nonisolated enum MazeGenerator {
     /// Generates a maze of the given shape for a difficulty level, retrying with derived seeds
     /// until the difficulty criteria are met. Deterministic for a given seed and shape.
     static func generate(difficulty: MazeDifficulty, seed: UInt64, rows: Int, columns: Int) -> Maze {
-        let criteria = difficulty.criteria(rows: rows, columns: columns)
+        search(seed: seed, criteria: difficulty.criteria(rows: rows, columns: columns)) { attemptSeed in
+            generate(rows: rows, columns: columns, seed: attemptSeed, twistiness: difficulty.twistiness)
+        }
+    }
+
+    /// Generates a circular maze with `rings` rings around the hub for a difficulty level.
+    static func generate(difficulty: MazeDifficulty, seed: UInt64, rings: Int) -> Maze {
+        search(seed: seed, criteria: difficulty.criteria(rings: rings)) { attemptSeed in
+            generateCircular(rings: rings, seed: attemptSeed, twistiness: difficulty.twistiness)
+        }
+    }
+
+    /// Tries `make` with derived seeds until a maze meets `criteria`, or returns the best one found.
+    private static func search(seed: UInt64, criteria: MazeCriteria, make: (UInt64) -> Maze) -> Maze {
         var best: (maze: Maze, length: Int)?
         for attempt in 0..<maximumAttempts {
             let attemptSeed = seed &+ UInt64(attempt) &* 0xD1B5_4A32_D192_ED03
-            let maze = generate(rows: rows, columns: columns, seed: attemptSeed, twistiness: difficulty.twistiness)
+            let maze = make(attemptSeed)
             guard let metrics = MazeSolver.metrics(for: maze) else { continue }
             if criteria.isSatisfied(by: metrics) { return maze }
             if metrics.solutionLength > (best?.length ?? 0) {
                 best = (maze, metrics.solutionLength)
             }
         }
-        return best?.maze ?? generate(rows: rows, columns: columns, seed: seed, twistiness: difficulty.twistiness)
+        return best?.maze ?? make(seed)
     }
 
     /// Generates a single maze. Pass `start` / `finish` to choose the entrance and exit;
@@ -66,6 +79,54 @@ nonisolated enum MazeGenerator {
         )
         carve(&maze, twistiness: twistiness, using: &rng)
         return maze
+    }
+
+    // MARK: - Circular mazes
+
+    /// A circular maze: the start is a random cell on the outer ring and the finish is the hub.
+    /// `twistiness` is the chance of changing kind of move (round, in or out) when it could
+    /// carry on the same way.
+    static func generateCircular(rings: Int, seed: UInt64, twistiness: Double = 0.5) -> Maze {
+        let sizes = CircularShape.ringSizes(rings: max(1, min(rings, CircularShape.maximumRings)))
+        var rng = SeededGenerator(seed: seed)
+        let start = GridPoint(row: sizes.count - 1, column: rng.next(below: sizes[sizes.count - 1]))
+        var maze = Maze(ringSizes: sizes, start: start, seed: seed)
+        carveCircular(&maze, twistiness: twistiness, using: &rng)
+        return maze
+    }
+
+    /// The same depth-first carving as the grid, over the circular cells' neighbours.
+    private static func carveCircular(_ maze: inout Maze, twistiness: Double, using rng: inout SeededGenerator) {
+        var visited = Array(repeating: false, count: maze.cellCount)
+        let first = maze.point(at: rng.next(below: maze.cellCount))
+        visited[maze.index(of: first)] = true
+        var stack: [(point: GridPoint, arrivedKind: Int?)] = [(first, nil)]
+        let turnChance = Int((min(max(twistiness, 0), 1) * 1000).rounded())
+
+        while let (current, arrivedKind) = stack.last {
+            let options = maze.geometry.adjacentCells(of: current).filter { !visited[maze.index(of: $0.point)] }
+            guard !options.isEmpty else {
+                stack.removeLast()
+                continue
+            }
+            let straight = options.filter { $0.kind == arrivedKind }
+            let chosen: (point: GridPoint, kind: Int)
+            let turns = options.filter { $0.kind != arrivedKind }
+            if options.count > 1, !straight.isEmpty {
+                // Turn when asked to and possible (every option may be the same kind of move,
+                // such as the two cells outward of a ring that doubles).
+                if !turns.isEmpty, rng.next(below: 1000) < turnChance {
+                    chosen = turns[rng.next(below: turns.count)]
+                } else {
+                    chosen = straight[rng.next(below: straight.count)]
+                }
+            } else {
+                chosen = options[rng.next(below: options.count)]
+            }
+            maze.openLink(from: current, to: chosen.point)
+            visited[maze.index(of: chosen.point)] = true
+            stack.append((chosen.point, chosen.kind))
+        }
     }
 
     // MARK: - Carving

@@ -85,6 +85,23 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, C
         }
     }
 
+    /// What a generated circular maze must meet. Its size is the number of rings: the route has
+    /// to wind in from the edge to the hub, so it scales with them.
+    func criteria(rings: Int) -> MazeCriteria {
+        let routeFactor: Double
+        let decisionRate: Double
+        switch self {
+        case .beginner: (routeFactor, decisionRate) = (0.9, 0)
+        case .easy: (routeFactor, decisionRate) = (1.0, 0.025)
+        case .medium: (routeFactor, decisionRate) = (1.1, 0.03)
+        case .hard: (routeFactor, decisionRate) = (1.25, 0.03)
+        }
+        return MazeCriteria(
+            minimumSolutionLength: Int(Double(rings) * 3 * routeFactor),
+            minimumDecisionPoints: Int(Double(CircularShape.totalCells(rings: rings)) * decisionRate)
+        )
+    }
+
     /// What a generated maze must meet. Scaled by the grid's size and shape, not fixed numbers,
     /// so a long thin grid counts as the level it says.
     func criteria(rows: Int, columns: Int) -> MazeCriteria {

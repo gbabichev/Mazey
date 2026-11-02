@@ -39,9 +39,7 @@ nonisolated struct MazePath: Equatable, Sendable {
             visited.remove(cells.removeLast())
             return .retraced
         }
-        guard !visited.contains(target),
-              MazeDirection.allCases.contains(where: { maze.neighbor(of: end, $0) == target })
-        else { return .ignored }
+        guard !visited.contains(target), maze.openNeighbors(of: end).contains(target) else { return .ignored }
         cells.append(target)
         visited.insert(target)
         return .appended
@@ -56,10 +54,14 @@ nonisolated struct MazePath: Equatable, Sendable {
     /// How much closer the pointer must be to a neighbour than to the end cell before the
     /// path moves, so a pointer resting on the boundary does not flicker back and forth.
     static let hysteresis: CGFloat = 0.1
+    /// Going back a step is the more deliberate move, so the pointer must be further into the
+    /// previous cell than the hysteresis alone asks. A little wobble across the edge between
+    /// two cells then does not undo the step just taken.
+    static let retraceMargin: CGFloat = 0.22
 
     /// True when `pointer` is within a cell of the end of the path.
-    func isNearEnd(_ pointer: CGPoint) -> Bool {
-        Self.distance(from: pointer, to: end) <= 1
+    func isNearEnd(_ pointer: CGPoint, in maze: Maze) -> Bool {
+        maze.distance(from: pointer, to: end) <= 1
     }
 
     /// Moves the end of the path toward `pointer`, which is measured in cell units
@@ -81,27 +83,28 @@ nonisolated struct MazePath: Equatable, Sendable {
     @discardableResult
     mutating func follow(_ pointer: CGPoint, in maze: Maze, allowRetrace: Bool, finish: GridPoint? = nil) -> Bool {
         var moved = false
-        let pointerCell = GridPoint(row: Int(pointer.y.rounded(.down)), column: Int(pointer.x.rounded(.down)))
+        let pointerCell = maze.cell(containing: pointer)
         // A few steps per call lets a fast pointer catch up after skipping cells.
         for _ in 0..<8 {
-            var candidates = MazeDirection.allCases
-                .compactMap { maze.neighbor(of: end, $0) }
-                .filter { !visited.contains($0) }
+            var candidates = maze.openNeighbors(of: end).filter { !visited.contains($0) }
             if allowRetrace, cells.count >= 2 {
                 candidates.append(cells[cells.count - 2])
             }
+            let previous = cells.count >= 2 ? cells[cells.count - 2] : nil
+            let isRetrace = pointerCell != nil && pointerCell == previous
             let target: GridPoint
-            let isRetrace = cells.count >= 2 && pointerCell == cells[cells.count - 2]
-            if candidates.contains(pointerCell), Self.distance(from: pointer, to: pointerCell) <= Self.cellInterior,
-               !isRetrace || Self.isClearlyCloser(pointer, to: pointerCell, than: end) {
+            if let pointerCell, candidates.contains(pointerCell),
+               maze.distance(from: pointer, to: pointerCell) <= Self.cellInterior,
+               !isRetrace || Self.isClearlyCloser(pointer, to: pointerCell, than: end, in: maze, margin: Self.retraceMargin) {
                 target = pointerCell
-            } else if let next = Self.nextStep(toward: pointerCell, from: end, in: maze, candidates: candidates),
-                      next != cells.dropLast().last || Self.isClearlyCloser(pointer, to: next, than: end) {
+            } else if let pointerCell,
+                      let next = Self.nextStep(toward: pointerCell, from: end, in: maze, candidates: candidates),
+                      next != previous || Self.isClearlyCloser(pointer, to: next, than: end, in: maze, margin: Self.retraceMargin) {
                 target = next
             } else {
-                let hereDistance = Self.distance(from: pointer, to: end)
-                guard let best = candidates.min(by: { Self.distance(from: pointer, to: $0) < Self.distance(from: pointer, to: $1) }) else { break }
-                let bestDistance = Self.distance(from: pointer, to: best)
+                let hereDistance = maze.distance(from: pointer, to: end)
+                guard let best = candidates.min(by: { maze.distance(from: pointer, to: $0) < maze.distance(from: pointer, to: $1) }) else { break }
+                let bestDistance = maze.distance(from: pointer, to: best)
                 guard bestDistance <= Self.reach, bestDistance + Self.hysteresis < hereDistance else { break }
                 target = best
             }
@@ -112,28 +115,27 @@ nonisolated struct MazePath: Equatable, Sendable {
         return moved
     }
 
-    /// The first step along the maze's route to `goal`, when the goal is two or three cells away
-    /// and the route heads straight there without doubling back (a pointer that cut a corner,
-    /// for example). A neighbouring cell is handled by the direct move instead. A perfect maze
-    /// has exactly one route between two cells, so this picks the right branch at a junction
-    /// even when the pointer is exactly between two of them.
+    /// The first step along the maze's route to `goal`, when the goal is two or three steps away
+    /// and the route heads straight there without detouring (a pointer that cut a corner, for
+    /// example). A neighbouring cell is handled by the direct move instead. A perfect maze has
+    /// exactly one route between two cells, so this picks the right branch at a junction even
+    /// when the pointer is exactly between two of them.
     private static func nextStep(toward goal: GridPoint, from end: GridPoint, in maze: Maze, candidates: [GridPoint]) -> GridPoint? {
-        let maxSteps = 3
-        guard goal != end, end.manhattanDistance(to: goal) >= 2, end.manhattanDistance(to: goal) <= maxSteps,
+        // A circular maze's inner cell touches two cells of the ring outside it, so cutting
+        // from one of those to the inner cell is a two-step route that looks one step long.
+        let slack = maze.style == .circular ? 1 : 0
+        let straight = maze.straightSteps(from: end, to: goal)
+        guard goal != end, straight <= 3, straight + slack >= 2,
               let route = MazeSolver.solve(maze, from: end, to: goal),
-              route.count - 1 == end.manhattanDistance(to: goal),
+              (2...3).contains(route.count - 1), route.count - 1 <= straight + slack,
               candidates.contains(route[1])
         else { return nil }
         return route[1]
     }
 
     /// Whether `pointer` is nearer to `cell` than to `other` by more than the hysteresis.
-    private static func isClearlyCloser(_ pointer: CGPoint, to cell: GridPoint, than other: GridPoint) -> Bool {
-        distance(from: pointer, to: cell) + hysteresis < distance(from: pointer, to: other)
-    }
-
-    private static func distance(from pointer: CGPoint, to cell: GridPoint) -> CGFloat {
-        hypot(pointer.x - (CGFloat(cell.column) + 0.5), pointer.y - (CGFloat(cell.row) + 0.5))
+    private static func isClearlyCloser(_ pointer: CGPoint, to cell: GridPoint, than other: GridPoint, in maze: Maze, margin: CGFloat = hysteresis) -> Bool {
+        maze.distance(from: pointer, to: cell) + margin < maze.distance(from: pointer, to: other)
     }
 
     mutating func reset(to start: GridPoint) {
