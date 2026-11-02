@@ -639,8 +639,8 @@ struct MazeEngineTests {
 
     @Test func soundsHaveSensibleLengths() {
         func seconds(_ effect: SoundEffect) -> Double { Double(SoundSynth.samples(for: effect).count) / SoundSynth.sampleRate }
-        #expect(seconds(.step(0)) < 0.3)
-        #expect(seconds(.retrace(0)) < 0.3)
+        #expect(seconds(.step(0)) < 0.8)
+        #expect(seconds(.retrace(0)) < seconds(.step(0)))
         #expect(seconds(.finish) > 1.0 && seconds(.finish) < 2.5)
         for theme in MazeTheme.all {
             #expect(seconds(.newMaze(themeID: theme.id)) < 1.2, "\(theme.id)")
@@ -650,17 +650,35 @@ struct MazeEngineTests {
         #expect(seconds(.hint(.medium)) < seconds(.hint(.full)))
     }
 
-    @Test func stepPitchRisesAlongTheScale() {
+    @Test func stepsPlayTheNotesOfTheMelodyInOrder() {
         // Zero crossings per second track pitch for these near-sine notes.
-        func crossings(_ effect: SoundEffect) -> Int {
-            let samples = SoundSynth.samples(for: effect).prefix(Int(0.1 * SoundSynth.sampleRate))
+        func crossings(_ position: Int) -> Int {
+            let samples = SoundSynth.samples(for: .step(position)).prefix(Int(0.1 * SoundSynth.sampleRate))
             return zip(samples, samples.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
         }
-        let rates = (0..<SoundSynth.stepScale.count).map { crossings(.step($0)) }
-        #expect(rates == rates.sorted())
-        #expect(rates.first! < rates.last!)
-        // The scale repeats, so a long route never runs out of notes.
-        #expect(SoundSynth.samples(for: .step(3)) == SoundSynth.samples(for: .step(3 + SoundSynth.stepScale.count)))
+        // Ode to Joy opens E E F G: the third note is higher than the second, the first and second match.
+        let start = 0
+        #expect(Melody.tunes[0].name == "Ode to Joy")
+        #expect(abs(crossings(start) - crossings(start + 1)) <= 1)
+        #expect(crossings(start + 3) > crossings(start + 2))
+        #expect(SoundSynth.samples(for: .step(start)) == SoundSynth.samples(for: .step(start + Melody.count)), "the song wraps")
+        #expect(SoundSynth.samples(for: .retrace(4)) != SoundSynth.samples(for: .step(4)), "rewinding is softer")
+    }
+
+    @Test func melodiesAreWrittenCorrectly() {
+        #expect(Melody.midiNumber("C5") == 72)
+        #expect(Melody.midiNumber("A4") == 69)
+        #expect(Melody.midiNumber("F#4") == 66)
+        #expect(Melody.midiNumber("Bb3") == 58)
+        for tune in Melody.tunes {
+            #expect(tune.notes.count >= 30, Comment(rawValue: tune.name))
+            #expect(tune.notes.allSatisfy { (55...90).contains($0) }, "\(tune.name) stays in a singable range")
+        }
+        // A maze starts at the beginning of a tune, and different seeds start different tunes.
+        let starts = Set((0..<40 as Range<UInt64>).map(Melody.startPosition(for:)))
+        let tuneStarts = Set(Melody.tunes.indices.map { index in Melody.tunes[..<index].reduce(0) { $0 + $1.notes.count } })
+        #expect(starts.isSubset(of: tuneStarts))
+        #expect(starts.count >= 4)
     }
 
     @Test func themesHaveDifferentFlourishes() {

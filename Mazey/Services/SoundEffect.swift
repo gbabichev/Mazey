@@ -7,9 +7,10 @@ import Foundation
 
 /// Everything the game can make a sound for.
 nonisolated enum SoundEffect: Hashable, Sendable {
-    /// The path grew. The number is how many steps long it now is, which sets the pitch.
+    /// The path grew. The number is how many steps long it now is, which picks the next note
+    /// of the melody (see `Melody`).
     case step(Int)
-    /// The path shrank. The number is its new length.
+    /// The path shrank. The number is its new length; the note it had on the way out plays again.
     case retrace(Int)
     case finish
     /// A star was picked up. The number is how many have been collected in this maze,
@@ -31,6 +32,12 @@ protocol SoundPlaying: AnyObject {
     func play(_ effect: SoundEffect)
     func speak(_ phrase: SpokenPhrase)
     func stopSpeaking()
+    /// Sets where in the song a maze's first step begins.
+    func startMelody(at position: Int)
+}
+
+extension SoundPlaying {
+    func startMelody(at position: Int) {}
 }
 
 /// Plays nothing. The default for tests and previews.

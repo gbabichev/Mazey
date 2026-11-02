@@ -19,6 +19,7 @@ final class SoundEngine: SoundPlaying {
     private var players: [AVAudioPlayerNode] = []
     private var nextPlayer = 0
     private var buffers: [SoundEffect: AVAudioPCMBuffer] = [:]
+    private var melodyStart = 0
     private var lastStepTime: ContinuousClock.Instant?
     private let haptics = Haptics()
     private let speech = Speech()
@@ -47,7 +48,12 @@ final class SoundEngine: SoundPlaying {
         speech.stop()
     }
 
-    func play(_ effect: SoundEffect) {
+    func startMelody(at position: Int) {
+        melodyStart = position
+    }
+
+    func play(_ requested: SoundEffect) {
+        let effect = inMelody(requested)
         if !shouldPlay(effect) { return }
         haptics.perform(HapticKind.kind(for: effect))
         guard startEngineIfNeeded() else { return }
@@ -58,6 +64,15 @@ final class SoundEngine: SoundPlaying {
     }
 
     // MARK: - Private
+
+    /// A step's length becomes a place in the song: the first step is the first note.
+    private func inMelody(_ effect: SoundEffect) -> SoundEffect {
+        switch effect {
+        case .step(let length): .step(melodyStart + max(0, length - 1))
+        case .retrace(let length): .retrace(melodyStart + max(0, length - 1))
+        default: effect
+        }
+    }
 
     /// Drops step sounds that would arrive too quickly after the last one.
     private func shouldPlay(_ effect: SoundEffect) -> Bool {
@@ -120,9 +135,9 @@ final class SoundEngine: SoundPlaying {
 }
 
 private extension SoundEffect {
-    /// Steps repeat their pitch every few cells, so they share buffers.
+    /// The melody wraps round at its end, so positions past it share buffers.
     nonisolated var normalized: SoundEffect {
-        let count = SoundSynth.stepScale.count
+        let count = Melody.count
         switch self {
         case .step(let length): return .step(abs(length) % count)
         case .retrace(let length): return .retrace(abs(length) % count)

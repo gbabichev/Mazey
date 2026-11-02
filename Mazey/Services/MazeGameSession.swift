@@ -102,6 +102,7 @@ final class MazeGameSession {
         self.seed = seed
         self.maze = maze
         self.path = MazePath(start: maze.start)
+        sounds.startMelody(at: Melody.startPosition(for: seed))
     }
 
     /// Stars still waiting to be picked up.
@@ -227,6 +228,7 @@ final class MazeGameSession {
             defaults.set(difficulty.rawValue, forKey: Self.difficultyKey)
         }
         self.seed = seed
+        sounds.startMelody(at: Melody.startPosition(for: seed))
         maze = makeMaze(seed: seed)
         placeStars()
         theme = MazeTheme.theme(for: seed, avoiding: theme)

@@ -17,6 +17,7 @@ nonisolated enum SoundSynth {
         case soft    // smooth triangle wave, good for glides
         case buzz    // rough, for low rumbles
         case noise   // breathy whoosh
+        case piano   // struck string: a bright attack that dies away, higher partials faster
     }
 
     struct Note: Sendable {
@@ -36,16 +37,20 @@ nonisolated enum SoundSynth {
         render(notes(for: effect))
     }
 
+    /// The pitch of a note of the melody (see `Melody`).
+    static func melodyFrequency(at position: Int) -> Double {
+        frequency(semitonesAboveC5: Double(Melody.midi(at: position) - 72))
+    }
+
     // MARK: - Effects
 
     static func notes(for effect: SoundEffect) -> [Note] {
         switch effect {
-        case .step(let length):
-            let pitch = frequency(semitonesAboveC5: stepScale[abs(length) % stepScale.count])
-            return [Note(frequency: pitch, start: 0, duration: 0.16, gain: 0.5, timbre: .pluck)]
-        case .retrace(let length):
-            let pitch = frequency(semitonesAboveC5: stepScale[abs(length) % stepScale.count])
-            return [Note(frequency: pitch, start: 0, duration: 0.12, gain: 0.3, timbre: .soft)]
+        case .step(let position):
+            return [Note(frequency: melodyFrequency(at: position), start: 0, duration: 0.7, gain: 0.3, timbre: .piano)]
+        case .retrace(let position):
+            // The same note again, softer and shorter, like the song rewinding.
+            return [Note(frequency: melodyFrequency(at: position), start: 0, duration: 0.4, gain: 0.17, timbre: .piano)]
         case .collect(let number):
             let step = stepScale[max(0, number - 1) % stepScale.count]
             return [
@@ -231,6 +236,17 @@ nonisolated enum SoundSynth {
                 case .buzz:
                     wave = (1...6).reduce(0.0) { $0 + sin(Double($1) * phase) / Double($1) } * 0.6
                     envelope *= exp(-t * 6)
+                case .piano:
+                    // Partials a little sharp of whole multiples, as in a real string, each
+                    // dying away faster the higher it is.
+                    var sum = 0.0
+                    for (index, level) in [1.0, 0.55, 0.32, 0.2, 0.12, 0.07].enumerated() {
+                        let n = Double(index + 1)
+                        let stretch = (1 + 0.0004 * n * n).squareRoot()
+                        sum += level * exp(-t * 1.6 * n) * sin(n * stretch * phase)
+                    }
+                    wave = sum
+                    envelope *= exp(-t * 2.2)
                 case .noise:
                     let sample = Double(noiseSource.next() % 20_001) / 10_000 - 1
                     // A low-pass filter that opens and closes over the note gives a breath.
