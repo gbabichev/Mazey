@@ -27,10 +27,21 @@ final class MazeGameSession {
         didSet {
             defaults.set(isSoundOn, forKey: Self.soundKey)
             if isSoundOn && !oldValue { sounds.play(.soundOn) }
+            if !isSoundOn { sounds.stopSpeaking() }
         }
     }
 
+    /// True while the finger demo is on screen. It shows on the very first launch and again
+    /// as a nudge when a new player leaves a maze untouched for a while.
+    private(set) var isDemoVisible: Bool
+    /// How many mazes have been finished, remembered between launches.
+    private(set) var completedMazes: Int
+
     static let soundKey = "soundEnabled"
+    static let demoSeenKey = "demoSeen"
+    static let completedKey = "completedMazes"
+    /// The idle nudge stops once a child has finished this many mazes: they know what to do.
+    static let nudgeUntilCompleted = 3
     @ObservationIgnored private let sounds: any SoundPlaying
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -48,6 +59,8 @@ final class MazeGameSession {
         self.sounds = sounds
         self.defaults = defaults
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
+        self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
+        self.completedMazes = defaults.integer(forKey: Self.completedKey)
         self.difficulty = difficulty
         self.theme = MazeTheme.theme(for: seed)
         self.seed = seed
@@ -58,12 +71,38 @@ final class MazeGameSession {
     /// True once the player has drawn any of the route.
     var hasProgress: Bool { path.cells.count > 1 }
 
+    // MARK: - Demo
+
+    /// The first few cells of the way to the finish, which the demo finger follows.
+    var demoRoute: [GridPoint] {
+        guard isDemoVisible, let route = MazeSolver.solve(maze, from: path.end) else { return [] }
+        return Array(route.prefix(4))
+    }
+
+    /// Hides the demo, and remembers that it has been seen. Any touch on the maze does this.
+    func dismissDemo() {
+        guard isDemoVisible else { return }
+        isDemoVisible = false
+        defaults.set(true, forKey: Self.demoSeenKey)
+        sounds.stopSpeaking()
+    }
+
+    /// Brings the demo back for a player who has not started the maze. Called after the
+    /// screen has sat idle, but only while the player is still new to the game.
+    func nudgeIfIdle() {
+        guard !isDemoVisible, !hasProgress, !isComplete, completedMazes < Self.nudgeUntilCompleted else { return }
+        isDemoVisible = true
+        speak(.goal(themeID: theme.id))
+    }
+
     /// Called when the screen's usable space changes (first layout, rotation, folding the Duo,
     /// split view). A maze the player has not started yet is regenerated, from the same seed,
     /// in the shape that fits the new space. A maze in progress is left alone and re-fitted.
     func updateSpace(_ newSpace: MazeSpace) {
         guard newSpace != space else { return }
+        let isFirstLayout = space == nil
         space = newSpace
+        defer { if isFirstLayout && isDemoVisible { speak(.goal(themeID: theme.id)) } }
         guard !hasProgress else { return }
         let fitted = makeMaze(seed: seed)
         guard fitted != maze else { return }
@@ -92,6 +131,8 @@ final class MazeGameSession {
         maze = makeMaze(seed: seed)
         theme = MazeTheme.theme(for: seed, avoiding: theme)
         resetRoute()
+        isDemoVisible = false
+        sounds.stopSpeaking()
         play(.newMaze(themeID: theme.id))
     }
 
@@ -110,6 +151,10 @@ final class MazeGameSession {
 
     private func play(_ effect: SoundEffect) {
         if isSoundOn { sounds.play(effect) }
+    }
+
+    private func speak(_ phrase: SpokenPhrase) {
+        if isSoundOn { sounds.speak(phrase) }
     }
 
     // MARK: - Hints
@@ -132,6 +177,7 @@ final class MazeGameSession {
     /// so a fast drag cannot skip over cells.
     func drag(from previous: CGPoint, to current: CGPoint) {
         guard !isComplete else { return }
+        dismissDemo()
         let distance = hypot(current.x - previous.x, current.y - previous.y)
         let steps = max(1, Int((distance / 0.2).rounded(.up)))
         for step in 1...steps {
@@ -150,6 +196,7 @@ final class MazeGameSession {
     /// Keyboard movement: one step, or back one step if the key points at the previous cell.
     func step(_ direction: MazeDirection) {
         guard !isComplete else { return }
+        dismissDemo()
         let before = path.cells.count
         apply(path.move(to: path.end.moved(direction), in: maze))
         playPathSound(from: before)
@@ -162,18 +209,23 @@ final class MazeGameSession {
         let moved = path.follow(pointer, in: maze, allowRetrace: isDragLive, finish: maze.finish)
         guard moved else { return }
         isDragLive = true
-        if path.end == maze.finish {
-            isComplete = true
-            hintLevel = nil
-            isDragLive = false
-        }
+        if path.end == maze.finish { finishMaze() }
         playPathSound(from: before)
+    }
+
+    private func finishMaze() {
+        isComplete = true
+        hintLevel = nil
+        isDragLive = false
+        completedMazes += 1
+        defaults.set(completedMazes, forKey: Self.completedKey)
     }
 
     /// A step sound when the path grew, a softer one when it shrank, and the fanfare at the finish.
     private func playPathSound(from previousLength: Int) {
         if isComplete {
             play(.finish)
+            speak(.cheer(Int(seed % UInt64(SpokenPhrase.cheers.count))))
         } else if path.cells.count > previousLength {
             play(.step(path.cells.count - 1))
         } else if path.cells.count < previousLength {
@@ -185,11 +237,7 @@ final class MazeGameSession {
         switch result {
         case .appended:
             isDragLive = true
-            if path.end == maze.finish {
-                isComplete = true
-                hintLevel = nil
-                isDragLive = false
-            }
+            if path.end == maze.finish { finishMaze() }
         case .retraced:
             isDragLive = true
         case .ignored:

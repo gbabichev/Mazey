@@ -240,7 +240,7 @@ struct MazeEngineTests {
     }
 
     @Test func sessionCompletesWhenFinishIsReached() throws {
-        let session = MazeGameSession(difficulty: .easy, seed: 21)
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
         let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
         #expect(!session.isComplete)
         for (from, to) in zip(route, route.dropFirst()) {
@@ -252,14 +252,14 @@ struct MazeEngineTests {
     }
 
     @Test func dragThatStartsAwayFromThePathDoesNotChangeIt() {
-        let session = MazeGameSession(difficulty: .easy, seed: 21)
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
         let far = CGPoint(x: Double(session.maze.finish.column) + 0.5, y: Double(session.maze.finish.row) + 0.5)
         session.drag(from: far, to: far)
         #expect(session.path.cells == [session.maze.start])
     }
 
     @Test func hintsDoNotChangeProgress() {
-        let session = MazeGameSession(difficulty: .easy, seed: 21)
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
         let before = session.path
         for _ in 0..<5 { session.requestHint() }
         #expect(session.path == before)
@@ -377,7 +377,7 @@ struct MazeEngineTests {
     }
 
     @Test func aFreshMazeRefitsWhenTheSpaceChanges() {
-        let session = MazeGameSession(difficulty: .medium, seed: 33)
+        let session = MazeGameSession(difficulty: .medium, seed: 33, defaults: isolatedDefaults())
         #expect(session.space == nil)
         let theme = session.theme.id
         session.updateSpace(MazeSpace(size: CGSize(width: 900, height: 400)))
@@ -389,7 +389,7 @@ struct MazeEngineTests {
     }
 
     @Test func aMazeInProgressIsKeptWhenTheSpaceChanges() throws {
-        let session = MazeGameSession(difficulty: .medium, seed: 33)
+        let session = MazeGameSession(difficulty: .medium, seed: 33, defaults: isolatedDefaults())
         session.updateSpace(MazeSpace(size: CGSize(width: 900, height: 400)))
         let maze = session.maze
         let route = try #require(MazeSolver.solve(maze, from: maze.start))
@@ -403,7 +403,7 @@ struct MazeEngineTests {
     }
 
     @Test func newMazeUsesTheCurrentSpace() {
-        let session = MazeGameSession(difficulty: .hard, seed: 1)
+        let session = MazeGameSession(difficulty: .hard, seed: 1, defaults: isolatedDefaults())
         session.updateSpace(MazeSpace(size: CGSize(width: 1000, height: 400)))
         for seed in 0..<10 as Range<UInt64> {
             session.newMaze(seed: seed)
@@ -496,7 +496,7 @@ struct MazeEngineTests {
 
     @Test func cuttingEveryCornerAlongTheSolutionStillFinishes() throws {
         for seed in 0..<40 as Range<UInt64> {
-            let session = MazeGameSession(difficulty: .hard, seed: seed)
+            let session = MazeGameSession(difficulty: .hard, seed: seed, defaults: isolatedDefaults())
             let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
             // Straight lines between every other cell of the route, so every turn is cut diagonally.
             var previous = center(row: route[0].row, column: route[0].column)
@@ -512,7 +512,7 @@ struct MazeEngineTests {
 
     @Test func aWobblyDragWithinTheCorridorStillFinishes() throws {
         for seed in 0..<40 as Range<UInt64> {
-            let session = MazeGameSession(difficulty: .hard, seed: seed)
+            let session = MazeGameSession(difficulty: .hard, seed: seed, defaults: isolatedDefaults())
             let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
             var rng = SeededGenerator(seed: seed)
             let phaseX = Double(rng.next(below: 628)) / 100
@@ -561,7 +561,7 @@ struct MazeEngineTests {
     }
 
     @Test func newMazeChangesTheme() {
-        let session = MazeGameSession(difficulty: .easy, seed: 5)
+        let session = MazeGameSession(difficulty: .easy, seed: 5, defaults: isolatedDefaults())
         for seed in 0..<50 as Range<UInt64> {
             let before = session.theme.id
             session.newMaze(seed: seed)
@@ -574,7 +574,11 @@ struct MazeEngineTests {
     @MainActor
     private final class SoundSpy: SoundPlaying {
         private(set) var played: [SoundEffect] = []
+        private(set) var spoken: [SpokenPhrase] = []
+        private(set) var stopCount = 0
         func play(_ effect: SoundEffect) { played.append(effect) }
+        func speak(_ phrase: SpokenPhrase) { spoken.append(phrase) }
+        func stopSpeaking() { stopCount += 1 }
     }
 
     /// A fresh, empty settings store so the saved mute setting never leaks between tests.
@@ -708,6 +712,147 @@ struct MazeEngineTests {
         session.isSoundOn = true
         #expect(spy.played == [.soundOn])
         #expect(MazeGameSession(sounds: spy, defaults: defaults).isSoundOn)
+    }
+
+    // MARK: - Demo, speech and haptics
+
+    @Test func theDemoShowsOnFirstLaunchAndNeverAgainOnceDismissed() {
+        let defaults = isolatedDefaults()
+        let first = MazeGameSession(difficulty: .beginner, seed: 4, defaults: defaults)
+        #expect(first.isDemoVisible)
+        first.dismissDemo()
+        #expect(!first.isDemoVisible)
+        // A later launch remembers that it was seen.
+        #expect(!MazeGameSession(difficulty: .beginner, seed: 4, defaults: defaults).isDemoVisible)
+    }
+
+    @Test func touchingTheMazeDismissesTheDemo() {
+        let session = MazeGameSession(difficulty: .beginner, seed: 4, defaults: isolatedDefaults())
+        #expect(session.isDemoVisible)
+        let far = CGPoint(x: 99, y: 99)
+        session.drag(from: far, to: far)   // even a touch that moves nothing counts
+        #expect(!session.isDemoVisible)
+    }
+
+    @Test func theDemoRouteIsTheFirstStepsOfTheSolution() throws {
+        let session = MazeGameSession(difficulty: .medium, seed: 12, defaults: isolatedDefaults())
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        #expect(session.demoRoute == Array(route.prefix(4)))
+        session.dismissDemo()
+        #expect(session.demoRoute.isEmpty)
+    }
+
+    @Test func anIdleNewPlayerGetsANudge() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .beginner, seed: 4, defaults: defaults)
+        session.dismissDemo()
+        session.nudgeIfIdle()
+        #expect(session.isDemoVisible)
+    }
+
+    @Test func noNudgeOnceThePlayerHasStartedOrIsExperienced() throws {
+        // Already drawing: no nudge.
+        let started = MazeGameSession(difficulty: .beginner, seed: 4, defaults: isolatedDefaults())
+        started.dismissDemo()
+        let route = try #require(MazeSolver.solve(started.maze, from: started.maze.start))
+        started.drag(from: center(row: route[0].row, column: route[0].column),
+                     to: center(row: route[1].row, column: route[1].column))
+        started.nudgeIfIdle()
+        #expect(!started.isDemoVisible)
+
+        // Finished enough mazes: no nudge.
+        let defaults = isolatedDefaults()
+        defaults.set(MazeGameSession.nudgeUntilCompleted, forKey: MazeGameSession.completedKey)
+        let experienced = MazeGameSession(difficulty: .beginner, seed: 4, defaults: defaults)
+        experienced.dismissDemo()
+        experienced.nudgeIfIdle()
+        #expect(!experienced.isDemoVisible)
+    }
+
+    @Test func aNewMazeHidesTheDemoWithoutMarkingItSeen() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .beginner, seed: 4, defaults: defaults)
+        session.newMaze(seed: 9)
+        #expect(!session.isDemoVisible)
+    }
+
+    @Test func finishedMazesAreCountedAndRemembered() throws {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
+        #expect(session.completedMazes == 0)
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+        #expect(session.completedMazes == 1)
+        #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).completedMazes == 1)
+    }
+
+    @Test func theGoalIsSpokenWithTheDemoAndTheCheerAtTheFinish() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.updateSpace(MazeSpace(size: CGSize(width: 700, height: 500)))
+        #expect(spy.spoken == [.goal(themeID: session.theme.id)])
+        session.updateSpace(MazeSpace(size: CGSize(width: 500, height: 700)))
+        #expect(spy.spoken.count == 1, "only the first layout announces the demo")
+
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+        #expect(session.isComplete)
+        #expect(spy.spoken.count == 2)
+        if case .cheer = spy.spoken.last {} else { Issue.record("expected a cheer, got \(String(describing: spy.spoken.last))") }
+    }
+
+    @Test func speechStopsWhenThePlayerStartsOrMovesOn() {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        let far = CGPoint(x: 99, y: 99)
+        session.drag(from: far, to: far)       // dismisses the demo
+        #expect(spy.stopCount == 1)
+        session.newMaze(seed: 2)
+        #expect(spy.stopCount == 2)
+    }
+
+    @Test func mutingSilencesSpeechToo() {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.isSoundOn = false
+        #expect(spy.stopCount == 1)
+        session.updateSpace(MazeSpace(size: CGSize(width: 700, height: 500)))
+        session.dismissDemo()
+        session.nudgeIfIdle()
+        #expect(spy.spoken.isEmpty)
+    }
+
+    @Test func everyPhraseHasTextAndAThemeHasItsOwnGoal() {
+        for variant in 0..<SpokenPhrase.cheers.count + 2 {
+            #expect(!SpokenPhrase.cheer(variant).text.isEmpty)
+        }
+        #expect(SpokenPhrase.cheer(0).text == SpokenPhrase.cheer(SpokenPhrase.cheers.count).text)
+        let goals = MazeTheme.all.map { SpokenPhrase.goal(themeID: $0.id).text }
+        #expect(Set(goals).count == goals.count)
+        #expect(!SpokenPhrase.goal(themeID: "unknown").text.isEmpty)
+        #expect(SpokenPhrase.cheer(0).delay > 0 && SpokenPhrase.goal(themeID: "space").delay > 0)
+    }
+
+    @Test func everySoundHasAHapticAndStepsGrowStronger() {
+        for effect in allEffects {
+            switch HapticKind.kind(for: effect) {
+            case .tick(let intensity): #expect((0...1).contains(intensity), "\(effect)")
+            case .celebrate: #expect(effect == .finish)
+            }
+        }
+        let intensities = (0..<SoundSynth.stepScale.count).map { index -> Double in
+            if case .tick(let value) = HapticKind.kind(for: .step(index)) { return value }
+            return -1
+        }
+        #expect(intensities == intensities.sorted())
+        #expect(intensities.first! < intensities.last!)
+        // Retracing is gentler than the quietest step.
+        if case .tick(let back) = HapticKind.kind(for: .retrace(3)) { #expect(back < intensities.first!) }
+        #expect(HapticKind.kind(for: .finish) == .celebrate)
     }
 
     // MARK: - Stress

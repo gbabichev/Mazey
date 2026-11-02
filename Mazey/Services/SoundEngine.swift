@@ -5,7 +5,8 @@
 
 import AVFoundation
 
-/// Plays the synthesized sound effects through AVAudioEngine.
+/// Plays the synthesized sound effects through AVAudioEngine, with a haptic for each, and
+/// speaks short phrases.
 ///
 /// On iOS the audio session is "ambient": sounds follow the silent switch and mix with
 /// music or podcasts a parent may have playing, instead of cutting them off.
@@ -19,6 +20,8 @@ final class SoundEngine: SoundPlaying {
     private var nextPlayer = 0
     private var buffers: [SoundEffect: AVAudioPCMBuffer] = [:]
     private var lastStepTime: ContinuousClock.Instant?
+    private let haptics = Haptics()
+    private let speech = Speech()
 
     /// Step sounds closer together than this are skipped, so a fast drag stays musical.
     private let minimumStepGap: Duration = .milliseconds(45)
@@ -36,8 +39,17 @@ final class SoundEngine: SoundPlaying {
         activateSession()
     }
 
+    func speak(_ phrase: SpokenPhrase) {
+        speech.speak(phrase)
+    }
+
+    func stopSpeaking() {
+        speech.stop()
+    }
+
     func play(_ effect: SoundEffect) {
         if !shouldPlay(effect) { return }
+        haptics.perform(HapticKind.kind(for: effect))
         guard startEngineIfNeeded() else { return }
         let player = players[nextPlayer]
         nextPlayer = (nextPlayer + 1) % players.count

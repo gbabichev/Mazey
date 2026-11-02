@@ -24,11 +24,16 @@ nonisolated enum SoundEffect: Hashable, Sendable {
 /// without making any noise.
 @MainActor
 protocol SoundPlaying: AnyObject {
+    /// Plays a sound effect, with the haptic that goes with it.
     func play(_ effect: SoundEffect)
+    func speak(_ phrase: SpokenPhrase)
+    func stopSpeaking()
 }
 
 /// Plays nothing. The default for tests and previews.
 @MainActor
 final class SilentSounds: SoundPlaying {
     func play(_ effect: SoundEffect) {}
+    func speak(_ phrase: SpokenPhrase) {}
+    func stopSpeaking() {}
 }

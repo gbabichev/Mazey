@@ -109,7 +109,8 @@ struct MazeGameView: View {
                     route: session.path.cells,
                     hint: session.hintCells,
                     hintLevel: session.hintLevel,
-                    theme: session.theme
+                    theme: session.theme,
+                    showsPlayer: !session.isDemoVisible
                 )
                 .frame(width: frame.width, height: frame.height)
                 .contentShape(Rectangle())
@@ -127,6 +128,18 @@ struct MazeGameView: View {
                         }
                 )
                 .overlay {
+                    if session.isDemoVisible {
+                        DemoFinger(
+                            points: session.demoRoute.map(layout.center(of:)),
+                            cellSize: layout.cellSize,
+                            playerEmoji: session.theme.playerEmoji,
+                            trailColor: session.theme.path,
+                            ringColor: session.theme.hint
+                        )
+                        .allowsHitTesting(false)
+                    }
+                }
+                .overlay {
                     if session.isComplete {
                         CelebrationView(theme: session.theme) {
                             withAnimation { session.newMaze() }
@@ -137,6 +150,19 @@ struct MazeGameView: View {
                 .animation(.spring(duration: 0.5), value: session.isComplete)
                 .offset(x: frame.minX, y: frame.minY)
             }
+        }
+        .task(id: IdleKey(
+            seed: session.maze.seed,
+            hasLayout: session.space != nil,
+            hasProgress: session.hasProgress,
+            isDemoVisible: session.isDemoVisible,
+            isComplete: session.isComplete
+        )) {
+            // A new player who leaves a fresh maze alone for a while gets shown how to play.
+            guard session.space != nil, !session.hasProgress, !session.isDemoVisible, !session.isComplete else { return }
+            try? await Task.sleep(for: .seconds(Self.idleSeconds))
+            guard !Task.isCancelled else { return }
+            session.nudgeIfIdle()
         }
         .onGeometryChange(for: MazeSpace.self) { proxy in
             #if os(iOS)
@@ -150,6 +176,17 @@ struct MazeGameView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
+    }
+
+    private static let idleSeconds = 10.0
+
+    /// Everything that restarts the idle countdown when it changes.
+    private struct IdleKey: Hashable {
+        var seed: UInt64
+        var hasLayout: Bool
+        var hasProgress: Bool
+        var isDemoVisible: Bool
+        var isComplete: Bool
     }
 
     /// Side space the maze must keep free when it extends under the top bar, so it never sits

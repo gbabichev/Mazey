@@ -13,6 +13,8 @@ struct MazeCanvas: View {
     let hint: [GridPoint]
     let hintLevel: MazeHintLevel?
     let theme: MazeTheme
+    /// False while the demo is showing: it draws the moving character itself.
+    var showsPlayer = true
 
     var body: some View {
         let maze = maze
@@ -20,6 +22,7 @@ struct MazeCanvas: View {
         let hint = hint
         let hintLevel = hintLevel
         let theme = theme
+        let showsPlayer = showsPlayer
         Canvas { context, size in
             let layout = MazeLayout(maze: maze, in: size)
             Self.drawFloor(&context, layout, theme)
@@ -30,7 +33,7 @@ struct MazeCanvas: View {
             Self.drawWalls(&context, maze, layout, theme)
             Self.drawEndpointEmoji(&context, maze, route, layout, theme)
             Self.drawLabels(&context, maze, layout, theme)
-            if let end = route.last {
+            if showsPlayer, let end = route.last {
                 Self.drawEmoji(&context, theme.playerEmoji, at: layout.center(of: end), size: layout.cellSize * 0.62)
             }
         }
