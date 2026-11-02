@@ -262,6 +262,126 @@ struct MazeEngineTests {
         #expect(session.path == before)
     }
 
+    // MARK: - Forgiving drags
+
+    /// A 2x2 maze shaped like a corner: (0,0) → (0,1) → (1,1). The cell at (1,0) is walled off.
+    private func cornerMaze() -> Maze {
+        var maze = Maze(rows: 2, columns: 2, start: GridPoint(row: 0, column: 0), finish: GridPoint(row: 1, column: 1))
+        maze.openPassage(from: GridPoint(row: 0, column: 0), .right)
+        maze.openPassage(from: GridPoint(row: 0, column: 1), .down)
+        return maze
+    }
+
+    private func center(row: Int, column: Int) -> CGPoint {
+        CGPoint(x: Double(column) + 0.5, y: Double(row) + 0.5)
+    }
+
+    @Test func cuttingACornerStillAdvancesThroughTheSkippedCell() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        // Straight from the first cell to the last, never touching the middle cell's center.
+        let moved1 = path.follow(center(row: 1, column: 1), in: maze, allowRetrace: false)
+        #expect(moved1)
+        #expect(path.cells == [GridPoint(row: 0, column: 0), GridPoint(row: 0, column: 1), GridPoint(row: 1, column: 1)])
+    }
+
+    @Test func touchingAWallDoesNothingAndDoesNotBreakTheDrag() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        // The pointer sits in the walled-off cell below the start.
+        let moved2 = path.follow(center(row: 1, column: 0), in: maze, allowRetrace: true)
+        #expect(!moved2)
+        #expect(path.cells == [maze.start])
+        // Moving on from there still works.
+        let moved3 = path.follow(center(row: 0, column: 1), in: maze, allowRetrace: true)
+        #expect(moved3)
+        #expect(path.end == GridPoint(row: 0, column: 1))
+    }
+
+    @Test func driftingAlongsideTheCorridorStillFollows() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        // Pointer travels along the wall side of the first cell, slightly off the corridor.
+        for x in stride(from: 0.5, through: 1.5, by: 0.1) {
+            path.follow(CGPoint(x: x, y: 0.9), in: maze, allowRetrace: true)
+        }
+        #expect(path.end == GridPoint(row: 0, column: 1))
+    }
+
+    @Test func pointerFarFromThePathIsIgnored() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        let moved4 = path.follow(CGPoint(x: 9, y: 9), in: maze, allowRetrace: true)
+        #expect(!moved4)
+        #expect(path.cells == [maze.start])
+    }
+
+    @Test func draggingBackRetracesOnlyWhenAllowed() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        path.follow(center(row: 0, column: 1), in: maze, allowRetrace: false)
+        let moved5 = path.follow(center(row: 0, column: 0), in: maze, allowRetrace: false)
+        #expect(!moved5)
+        #expect(path.cells.count == 2)
+        let moved6 = path.follow(center(row: 0, column: 0), in: maze, allowRetrace: true)
+        #expect(moved6)
+        #expect(path.cells == [maze.start])
+    }
+
+    @Test func pointerJitteringOnACellBoundaryDoesNotFlicker() {
+        let maze = cornerMaze()
+        var path = MazePath(start: maze.start)
+        // Crossing into the next cell advances...
+        let advanced = path.follow(CGPoint(x: 1.01, y: 0.5), in: maze, allowRetrace: true)
+        #expect(advanced)
+        #expect(path.end == GridPoint(row: 0, column: 1))
+        // ...but a hair back over the line does not undo it.
+        let jitter = path.follow(CGPoint(x: 0.99, y: 0.5), in: maze, allowRetrace: true)
+        #expect(!jitter)
+        #expect(path.end == GridPoint(row: 0, column: 1))
+        // Clearly moving back does.
+        let back = path.follow(CGPoint(x: 0.7, y: 0.5), in: maze, allowRetrace: true)
+        #expect(back)
+        #expect(path.cells == [maze.start])
+    }
+
+    @Test func cuttingEveryCornerAlongTheSolutionStillFinishes() throws {
+        for seed in 0..<40 as Range<UInt64> {
+            let session = MazeGameSession(difficulty: .hard, seed: seed)
+            let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+            // Straight lines between every other cell of the route, so every turn is cut diagonally.
+            var previous = center(row: route[0].row, column: route[0].column)
+            for cell in route.dropFirst().enumerated().filter({ $0.offset % 2 == 1 }).map(\.element) {
+                let target = center(row: cell.row, column: cell.column)
+                session.drag(from: previous, to: target)
+                previous = target
+            }
+            session.drag(from: previous, to: center(row: route.last!.row, column: route.last!.column))
+            #expect(session.isComplete, "seed \(seed) did not finish")
+        }
+    }
+
+    @Test func aWobblyDragWithinTheCorridorStillFinishes() throws {
+        for seed in 0..<40 as Range<UInt64> {
+            let session = MazeGameSession(difficulty: .hard, seed: seed)
+            let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+            var rng = SeededGenerator(seed: seed)
+            let phaseX = Double(rng.next(below: 628)) / 100
+            let phaseY = Double(rng.next(below: 628)) / 100
+            var previous = center(row: route[0].row, column: route[0].column)
+            for (index, cell) in route.enumerated().dropFirst() {
+                // A hand drifts slowly off-center, up to the edge of the corridor.
+                let target = CGPoint(
+                    x: Double(cell.column) + 0.5 + 0.45 * sin(0.7 * Double(index) + phaseX),
+                    y: Double(cell.row) + 0.5 + 0.45 * sin(0.9 * Double(index) + phaseY)
+                )
+                session.drag(from: previous, to: target)
+                previous = target
+            }
+            #expect(session.isComplete, "seed \(seed) did not finish")
+        }
+    }
+
     // MARK: - Themes
 
     @Test func everyThemeIsComplete() {

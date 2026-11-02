@@ -18,7 +18,7 @@ final class MazeGameSession {
     private(set) var difficulty: MazeDifficulty
     private(set) var theme: MazeTheme
 
-    /// True once the current drag has touched the end of the path, which lets
+    /// True once the current drag has come near the end of the path, which lets
     /// the drag retrace. A drag that starts elsewhere is ignored until then.
     private var isDragLive = false
 
@@ -92,14 +92,17 @@ final class MazeGameSession {
         apply(path.move(to: path.end.moved(direction), in: maze))
     }
 
-    private func visit(_ location: CGPoint) {
-        let cell = GridPoint(row: Int(location.y.rounded(.down)), column: Int(location.x.rounded(.down)))
-        guard maze.contains(cell) else { return }
-        if cell == path.end {
-            isDragLive = true
-            return
+    private func visit(_ pointer: CGPoint) {
+        // Touching down near the end of the path lets the drag pick up where it left off.
+        if path.isNearEnd(pointer) { isDragLive = true }
+        let moved = path.follow(pointer, in: maze, allowRetrace: isDragLive, finish: maze.finish)
+        guard moved else { return }
+        isDragLive = true
+        if path.end == maze.finish {
+            isComplete = true
+            hintLevel = nil
+            isDragLive = false
         }
-        apply(path.move(to: cell, in: maze, allowRetrace: isDragLive))
     }
 
     private func apply(_ result: MazePath.MoveResult) {
