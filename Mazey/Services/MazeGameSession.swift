@@ -22,12 +22,32 @@ final class MazeGameSession {
     private(set) var space: MazeSpace?
     private var seed: UInt64
 
+    /// Whether sound effects play. Remembered between launches.
+    var isSoundOn: Bool {
+        didSet {
+            defaults.set(isSoundOn, forKey: Self.soundKey)
+            if isSoundOn && !oldValue { sounds.play(.soundOn) }
+        }
+    }
+
+    static let soundKey = "soundEnabled"
+    @ObservationIgnored private let sounds: any SoundPlaying
+    @ObservationIgnored private let defaults: UserDefaults
+
     /// True once the current drag has come near the end of the path, which lets
     /// the drag retrace. A drag that starts elsewhere is ignored until then.
     private var isDragLive = false
 
-    init(difficulty: MazeDifficulty = .beginner, seed: UInt64 = .random(in: .min ... .max)) {
+    init(
+        difficulty: MazeDifficulty = .beginner,
+        seed: UInt64 = .random(in: .min ... .max),
+        sounds: any SoundPlaying = SilentSounds(),
+        defaults: UserDefaults = .standard
+    ) {
         let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
+        self.sounds = sounds
+        self.defaults = defaults
+        self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
         self.difficulty = difficulty
         self.theme = MazeTheme.theme(for: seed)
         self.seed = seed
@@ -71,14 +91,25 @@ final class MazeGameSession {
         self.seed = seed
         maze = makeMaze(seed: seed)
         theme = MazeTheme.theme(for: seed, avoiding: theme)
-        restart()
+        resetRoute()
+        play(.newMaze(themeID: theme.id))
     }
 
+    /// Start over on the same maze.
     func restart() {
+        resetRoute()
+        play(.restart)
+    }
+
+    private func resetRoute() {
         path.reset(to: maze.start)
         hintLevel = nil
         isComplete = false
         isDragLive = false
+    }
+
+    private func play(_ effect: SoundEffect) {
+        if isSoundOn { sounds.play(effect) }
     }
 
     // MARK: - Hints
@@ -91,6 +122,7 @@ final class MazeGameSession {
         } else {
             hintLevel = .small
         }
+        if let hintLevel { play(.hint(hintLevel)) }
     }
 
     // MARK: - Input
@@ -118,12 +150,15 @@ final class MazeGameSession {
     /// Keyboard movement: one step, or back one step if the key points at the previous cell.
     func step(_ direction: MazeDirection) {
         guard !isComplete else { return }
+        let before = path.cells.count
         apply(path.move(to: path.end.moved(direction), in: maze))
+        playPathSound(from: before)
     }
 
     private func visit(_ pointer: CGPoint) {
         // Touching down near the end of the path lets the drag pick up where it left off.
         if path.isNearEnd(pointer) { isDragLive = true }
+        let before = path.cells.count
         let moved = path.follow(pointer, in: maze, allowRetrace: isDragLive, finish: maze.finish)
         guard moved else { return }
         isDragLive = true
@@ -131,6 +166,18 @@ final class MazeGameSession {
             isComplete = true
             hintLevel = nil
             isDragLive = false
+        }
+        playPathSound(from: before)
+    }
+
+    /// A step sound when the path grew, a softer one when it shrank, and the fanfare at the finish.
+    private func playPathSound(from previousLength: Int) {
+        if isComplete {
+            play(.finish)
+        } else if path.cells.count > previousLength {
+            play(.step(path.cells.count - 1))
+        } else if path.cells.count < previousLength {
+            play(.retrace(path.cells.count - 1))
         }
     }
 

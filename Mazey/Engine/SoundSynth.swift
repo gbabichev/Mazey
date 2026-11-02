@@ -1,0 +1,197 @@
+//
+//  SoundSynth.swift
+//  Mazey
+//
+
+import Foundation
+
+/// Builds every sound effect from scratch as raw audio samples, so the app needs no audio files.
+/// Pure maths with no audio framework, which keeps it easy to test.
+nonisolated enum SoundSynth {
+    static let sampleRate = 44_100.0
+
+    /// How a note sounds.
+    enum Timbre: Sendable {
+        case bell    // bright, ringing
+        case pluck   // short and woody
+        case soft    // smooth triangle wave, good for glides
+        case buzz    // rough, for low rumbles
+        case noise   // breathy whoosh
+    }
+
+    struct Note: Sendable {
+        var frequency: Double
+        var start: Double
+        var duration: Double
+        var gain: Float = 0.5
+        var timbre: Timbre = .bell
+        /// If set, the pitch glides from `frequency` to this over the note.
+        var endFrequency: Double?
+    }
+
+    /// The pitches of the step sounds: a pentatonic scale, so any run of steps sounds pleasant.
+    static let stepScale = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21]
+
+    static func samples(for effect: SoundEffect) -> [Float] {
+        render(notes(for: effect))
+    }
+
+    // MARK: - Effects
+
+    static func notes(for effect: SoundEffect) -> [Note] {
+        switch effect {
+        case .step(let length):
+            let pitch = frequency(semitonesAboveC5: stepScale[abs(length) % stepScale.count])
+            return [Note(frequency: pitch, start: 0, duration: 0.16, gain: 0.5, timbre: .pluck)]
+        case .retrace(let length):
+            let pitch = frequency(semitonesAboveC5: stepScale[abs(length) % stepScale.count])
+            return [Note(frequency: pitch, start: 0, duration: 0.12, gain: 0.3, timbre: .soft)]
+        case .finish:
+            return finishFanfare
+        case .hint(let level):
+            let pitches: [Double]
+            switch level {
+            case .small: pitches = [16, 23]
+            case .medium: pitches = [12, 16, 19]
+            case .full: pitches = [12, 16, 19, 23, 26]
+            }
+            return pitches.enumerated().map { index, semitones in
+                Note(frequency: frequency(semitonesAboveC5: semitones), start: Double(index) * 0.07, duration: 0.32, gain: 0.35, timbre: .bell)
+            }
+        case .newMaze(let themeID):
+            return newMazeFlourish(themeID: themeID)
+        case .restart:
+            return [
+                Note(frequency: 600, start: 0, duration: 0.25, gain: 0.25, timbre: .soft, endFrequency: 200),
+                Note(frequency: 0, start: 0, duration: 0.25, gain: 0.12, timbre: .noise),
+            ]
+        case .soundOn:
+            return [
+                Note(frequency: frequency(semitonesAboveC5: 12), start: 0, duration: 0.12, gain: 0.4, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: 16), start: 0.08, duration: 0.16, gain: 0.4, timbre: .bell),
+            ]
+        }
+    }
+
+    /// A rising arpeggio, a held chord and a few sparkles on top.
+    private static var finishFanfare: [Note] {
+        var notes: [Note] = []
+        for (index, semitones) in [0.0, 4, 7, 12, 16].enumerated() {
+            notes.append(Note(frequency: frequency(semitonesAboveC5: semitones), start: Double(index) * 0.09, duration: 0.35, gain: 0.45, timbre: .bell))
+        }
+        for semitones in [0.0, 4, 7, 12] {
+            notes.append(Note(frequency: frequency(semitonesAboveC5: semitones), start: 0.5, duration: 0.9, gain: 0.22, timbre: .soft))
+        }
+        for (index, semitones) in [19.0, 24, 28].enumerated() {
+            notes.append(Note(frequency: frequency(semitonesAboveC5: semitones), start: 0.6 + Double(index) * 0.1, duration: 0.5, gain: 0.18, timbre: .bell))
+        }
+        return notes
+    }
+
+    /// A short sound for the start of a maze that matches the theme.
+    private static func newMazeFlourish(themeID: String) -> [Note] {
+        switch themeID {
+        case "space":
+            // A launch: a rising sweep with a breath of noise, then a twinkle.
+            return [
+                Note(frequency: 220, start: 0, duration: 0.45, gain: 0.3, timbre: .soft, endFrequency: 900),
+                Note(frequency: 0, start: 0, duration: 0.5, gain: 0.12, timbre: .noise),
+                Note(frequency: frequency(semitonesAboveC5: 16), start: 0.4, duration: 0.4, gain: 0.3, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: 23), start: 0.5, duration: 0.4, gain: 0.25, timbre: .bell),
+            ]
+        case "dinosaur":
+            // Two heavy stomps and a low rumble.
+            return [
+                Note(frequency: 95, start: 0, duration: 0.2, gain: 0.5, timbre: .buzz, endFrequency: 70),
+                Note(frequency: 80, start: 0.24, duration: 0.26, gain: 0.5, timbre: .buzz, endFrequency: 55),
+                Note(frequency: 0, start: 0.24, duration: 0.3, gain: 0.1, timbre: .noise),
+            ]
+        case "ocean":
+            // Four bubbles popping up.
+            return [
+                Note(frequency: 600, start: 0, duration: 0.1, gain: 0.35, timbre: .soft, endFrequency: 1200),
+                Note(frequency: 800, start: 0.12, duration: 0.1, gain: 0.35, timbre: .soft, endFrequency: 1500),
+                Note(frequency: 500, start: 0.24, duration: 0.12, gain: 0.35, timbre: .soft, endFrequency: 1000),
+                Note(frequency: 900, start: 0.35, duration: 0.1, gain: 0.35, timbre: .soft, endFrequency: 1700),
+            ]
+        case "farm":
+            // A boing and a cheerful two-note call.
+            return [
+                Note(frequency: 260, start: 0, duration: 0.14, gain: 0.35, timbre: .soft, endFrequency: 620),
+                Note(frequency: 620, start: 0.14, duration: 0.14, gain: 0.35, timbre: .soft, endFrequency: 360),
+                Note(frequency: frequency(semitonesAboveC5: 7), start: 0.32, duration: 0.25, gain: 0.35, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: 12), start: 0.42, duration: 0.3, gain: 0.35, timbre: .bell),
+            ]
+        default:
+            return [
+                Note(frequency: frequency(semitonesAboveC5: 12), start: 0, duration: 0.3, gain: 0.35, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: 19), start: 0.1, duration: 0.3, gain: 0.35, timbre: .bell),
+            ]
+        }
+    }
+
+    // MARK: - Rendering
+
+    /// C5, the base of the scale, is 523.25 Hz.
+    static func frequency(semitonesAboveC5 semitones: Double) -> Double {
+        523.25 * pow(2, semitones / 12)
+    }
+
+    private static func frequency(semitonesAboveC5 semitones: Int) -> Double {
+        frequency(semitonesAboveC5: Double(semitones))
+    }
+
+    /// Mixes the notes into one buffer. Every note fades in and out in a few milliseconds so
+    /// nothing clicks, and the result is scaled down if it would clip.
+    static func render(_ notes: [Note]) -> [Float] {
+        let end = notes.map { $0.start + $0.duration }.max() ?? 0
+        var output = [Float](repeating: 0, count: Int((end + 0.02) * sampleRate))
+        var noiseSource = SeededGenerator(seed: 7)
+
+        for note in notes {
+            let first = Int(note.start * sampleRate)
+            let count = Int(note.duration * sampleRate)
+            var phase = 0.0
+            var filtered = 0.0
+            for i in 0..<count where first + i < output.count {
+                let t = Double(i) / sampleRate
+                let progress = Double(i) / Double(max(1, count))
+                let pitch = note.endFrequency.map { note.frequency + ($0 - note.frequency) * progress } ?? note.frequency
+                phase += 2 * Double.pi * pitch / sampleRate
+
+                var envelope = min(1, t / 0.004)
+                let wave: Double
+                switch note.timbre {
+                case .bell:
+                    wave = sin(phase) + 0.4 * sin(2.76 * phase) + 0.2 * sin(5.4 * phase)
+                    envelope *= exp(-t * 5)
+                case .pluck:
+                    wave = sin(phase) + 0.3 * sin(2 * phase) + 0.1 * sin(3 * phase)
+                    envelope *= exp(-t * 12)
+                case .soft:
+                    wave = 2 / Double.pi * asin(sin(phase))
+                    envelope *= exp(-t * 3)
+                case .buzz:
+                    wave = (1...6).reduce(0.0) { $0 + sin(Double($1) * phase) / Double($1) } * 0.6
+                    envelope *= exp(-t * 6)
+                case .noise:
+                    let sample = Double(noiseSource.next() % 20_001) / 10_000 - 1
+                    // A low-pass filter that opens and closes over the note gives a breath.
+                    let alpha = 0.02 + 0.25 * sin(Double.pi * progress)
+                    filtered += alpha * (sample - filtered)
+                    wave = filtered * 4
+                    envelope = pow(sin(Double.pi * progress), 2)
+                }
+                let release = min(1, Double(count - i) / (0.01 * sampleRate))
+                output[first + i] += Float(wave * envelope * release) * note.gain
+            }
+        }
+
+        let peak = output.reduce(0) { max($0, abs($1)) }
+        if peak > 0.9 {
+            let scale = 0.9 / peak
+            for i in output.indices { output[i] *= scale }
+        }
+        return output
+    }
+}

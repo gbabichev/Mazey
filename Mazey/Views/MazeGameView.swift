@@ -7,7 +7,7 @@ import SwiftUI
 
 /// The single playable screen for the first milestone.
 struct MazeGameView: View {
-    @State private var session = MazeGameSession()
+    @State private var session = MazeGameSession(sounds: SoundEngine.shared)
     @State private var lastDragLocation: CGPoint?
     @FocusState private var isFocused: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -61,6 +61,14 @@ struct MazeGameView: View {
             }
             .pickerStyle(.menu)
             .accessibilityLabel("Difficulty")
+        }
+        ToolbarItem(placement: .navigation) {
+            Button {
+                session.isSoundOn.toggle()
+            } label: {
+                Image(systemName: session.isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+            }
+            .accessibilityLabel(session.isSoundOn ? "Sound on" : "Sound off")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button {

@@ -4,6 +4,7 @@
 //
 
 import CoreGraphics
+import Foundation
 import Testing
 @testable import Mazey
 
@@ -566,6 +567,147 @@ struct MazeEngineTests {
             session.newMaze(seed: seed)
             #expect(session.theme.id != before)
         }
+    }
+
+    // MARK: - Sound
+
+    @MainActor
+    private final class SoundSpy: SoundPlaying {
+        private(set) var played: [SoundEffect] = []
+        func play(_ effect: SoundEffect) { played.append(effect) }
+    }
+
+    /// A fresh, empty settings store so the saved mute setting never leaks between tests.
+    private func isolatedDefaults() -> UserDefaults {
+        let name = "MazeyTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    private let allEffects: [SoundEffect] = [
+        .step(0), .step(1), .step(9), .step(10), .step(57), .retrace(0), .retrace(4), .finish,
+        .hint(.small), .hint(.medium), .hint(.full), .restart, .soundOn,
+        .newMaze(themeID: "space"), .newMaze(themeID: "dinosaur"), .newMaze(themeID: "ocean"),
+        .newMaze(themeID: "farm"), .newMaze(themeID: "unknown"),
+    ]
+
+    @Test func everySoundIsWellFormed() {
+        for effect in allEffects {
+            let samples = SoundSynth.samples(for: effect)
+            #expect(!samples.isEmpty, "\(effect)")
+            #expect(samples.allSatisfy { $0.isFinite }, "\(effect) has non-finite samples")
+            let peak = samples.map { abs($0) }.max() ?? 0
+            #expect(peak <= 0.9001, "\(effect) clips: \(peak)")
+            #expect(peak > 0.05, "\(effect) is nearly silent: \(peak)")
+            // Fades in and out, so playback never clicks.
+            #expect(abs(samples.first ?? 0) < 0.02, "\(effect) starts with a click")
+            #expect(abs(samples.last ?? 0) < 0.02, "\(effect) ends with a click")
+        }
+    }
+
+    @Test func soundsHaveSensibleLengths() {
+        func seconds(_ effect: SoundEffect) -> Double { Double(SoundSynth.samples(for: effect).count) / SoundSynth.sampleRate }
+        #expect(seconds(.step(0)) < 0.3)
+        #expect(seconds(.retrace(0)) < 0.3)
+        #expect(seconds(.finish) > 1.0 && seconds(.finish) < 2.5)
+        for theme in MazeTheme.all {
+            #expect(seconds(.newMaze(themeID: theme.id)) < 1.2, "\(theme.id)")
+        }
+        // A bigger hint is a longer sparkle.
+        #expect(seconds(.hint(.small)) < seconds(.hint(.medium)))
+        #expect(seconds(.hint(.medium)) < seconds(.hint(.full)))
+    }
+
+    @Test func stepPitchRisesAlongTheScale() {
+        // Zero crossings per second track pitch for these near-sine notes.
+        func crossings(_ effect: SoundEffect) -> Int {
+            let samples = SoundSynth.samples(for: effect).prefix(Int(0.1 * SoundSynth.sampleRate))
+            return zip(samples, samples.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
+        }
+        let rates = (0..<SoundSynth.stepScale.count).map { crossings(.step($0)) }
+        #expect(rates == rates.sorted())
+        #expect(rates.first! < rates.last!)
+        // The scale repeats, so a long route never runs out of notes.
+        #expect(SoundSynth.samples(for: .step(3)) == SoundSynth.samples(for: .step(3 + SoundSynth.stepScale.count)))
+    }
+
+    @Test func themesHaveDifferentFlourishes() {
+        let flourishes = MazeTheme.all.map { SoundSynth.samples(for: .newMaze(themeID: $0.id)) }
+        for (index, flourish) in flourishes.enumerated() {
+            for other in flourishes[(index + 1)...] { #expect(flourish != other) }
+        }
+    }
+
+    @Test func drawingPlaysRisingStepsAndRetracingPlaysSofterOnes() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .medium, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        func at(_ index: Int) -> CGPoint { center(row: route[index].row, column: route[index].column) }
+        session.drag(from: at(0), to: at(1))
+        session.drag(from: at(1), to: at(2))
+        #expect(spy.played == [.step(1), .step(2)])
+        session.drag(from: at(2), to: at(1))
+        #expect(spy.played.last == .retrace(1))
+        #expect(spy.played.count == 3)
+    }
+
+    @Test func nothingPlaysWhenTheDragDoesNotMoveThePath() {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .medium, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        let far = CGPoint(x: 99, y: 99)
+        session.drag(from: far, to: far)
+        #expect(spy.played.isEmpty)
+    }
+
+    @Test func finishingPlaysTheFanfareOnce() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+        #expect(session.isComplete)
+        #expect(spy.played.filter { $0 == .finish }.count == 1)
+        #expect(spy.played.last == .finish)
+        // Once finished, more dragging stays quiet.
+        let count = spy.played.count
+        session.drag(from: center(row: 0, column: 0), to: center(row: 1, column: 1))
+        #expect(spy.played.count == count)
+    }
+
+    @Test func newMazeRestartAndHintsHaveTheirOwnSounds() {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.newMaze(seed: 8)
+        #expect(spy.played == [.newMaze(themeID: session.theme.id)])
+        session.restart()
+        #expect(spy.played.last == .restart)
+        #expect(spy.played.count == 2)
+        session.requestHint()
+        session.requestHint()
+        session.requestHint()
+        session.requestHint()   // the fourth tap turns hints off, silently
+        #expect(spy.played.suffix(3) == [.hint(.small), .hint(.medium), .hint(.full)])
+        #expect(spy.played.count == 5)
+    }
+
+    @Test func mutingSilencesEverythingAndIsRemembered() throws {
+        let defaults = isolatedDefaults()
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: defaults)
+        #expect(session.isSoundOn)
+        session.isSoundOn = false
+        session.newMaze(seed: 3)
+        session.restart()
+        session.requestHint()
+        #expect(spy.played.isEmpty)
+        // A new session reads the saved setting.
+        #expect(!MazeGameSession(sounds: spy, defaults: defaults).isSoundOn)
+        // Turning sound back on confirms with a chime.
+        session.isSoundOn = true
+        #expect(spy.played == [.soundOn])
+        #expect(MazeGameSession(sounds: spy, defaults: defaults).isSoundOn)
     }
 
     // MARK: - Stress
