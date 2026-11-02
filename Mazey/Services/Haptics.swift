@@ -27,6 +27,7 @@ nonisolated enum HapticKind: Equatable, Sendable {
             return .tick(intensity: 0.35 + 0.35 * position)
         case .retrace: return .tick(intensity: 0.25)
         case .finish: return .celebrate
+        case .collect: return .tick(intensity: 0.55)
         case .hint: return .tick(intensity: 0.5)
         case .newMaze: return .tick(intensity: 0.6)
         case .restart: return .tick(intensity: 0.4)

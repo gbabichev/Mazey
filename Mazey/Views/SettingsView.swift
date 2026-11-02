@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var session: MazeGameSession
     @Environment(\.dismiss) private var dismiss
+    @State private var showsStatistics = false
 
     var body: some View {
         #if os(iOS)
@@ -23,7 +24,8 @@ struct SettingsView: View {
                     }
                 }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection) }
         #else
         // A Mac sheet has no navigation bar: a heading, the switches, and a Done button.
         VStack(alignment: .leading, spacing: 16) {
@@ -40,6 +42,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 400)
+        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection) }
         #endif
     }
 
@@ -62,6 +65,16 @@ struct SettingsView: View {
             .disabled(!session.isSoundOn)
         } footer: {
             Text(session.isSoundOn ? "Says what to do, and cheers when you finish." : "Turn on sound effects to use the voice.")
+        }
+
+        Section {
+            Button {
+                showsStatistics = true
+            } label: {
+                Label("Statistics", systemImage: "chart.bar.fill")
+            }
+        } footer: {
+            Text("How many mazes, and how long they take. For grown-ups.")
         }
     }
 }

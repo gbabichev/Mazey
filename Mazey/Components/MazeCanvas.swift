@@ -15,6 +15,8 @@ struct MazeCanvas: View {
     let theme: MazeTheme
     /// False while the demo is showing: it draws the moving character itself.
     var showsPlayer = true
+    /// Stars still waiting to be collected.
+    var stars: Set<GridPoint> = []
 
     var body: some View {
         let maze = maze
@@ -23,11 +25,13 @@ struct MazeCanvas: View {
         let hintLevel = hintLevel
         let theme = theme
         let showsPlayer = showsPlayer
+        let stars = stars
         Canvas { context, size in
             let layout = MazeLayout(maze: maze, in: size)
             Self.drawFloor(&context, layout, theme)
             Self.drawEndpointTints(&context, maze, layout, theme)
             Self.drawScenery(&context, maze, route, layout, theme)
+            Self.drawStars(&context, stars, layout)
             Self.drawHint(&context, hint, hintLevel, layout, theme)
             Self.drawRoute(&context, route, layout, theme)
             Self.drawWalls(&context, maze, layout, theme)
@@ -201,6 +205,42 @@ struct MazeCanvas: View {
             let emoji = theme.decorations[rng.next(below: theme.decorations.count)]
             drawEmoji(&context, emoji, at: layout.center(of: point), size: layout.cellSize * 0.42)
         }
+    }
+
+    /// Gold stars with a soft glow, drawn as shapes so they cannot be mistaken for the emoji scenery.
+    private nonisolated static func drawStars(_ context: inout GraphicsContext, _ stars: Set<GridPoint>, _ layout: MazeLayout) {
+        for point in stars {
+            let center = layout.center(of: point)
+            let outer = layout.cellSize * 0.3
+            let glow = CGRect(x: center.x - outer * 1.6, y: center.y - outer * 1.6, width: outer * 3.2, height: outer * 3.2)
+            context.fill(
+                Path(ellipseIn: glow),
+                with: .radialGradient(
+                    Gradient(colors: [Color(red: 1.0, green: 0.88, blue: 0.3).opacity(0.55), Color(red: 1.0, green: 0.88, blue: 0.3).opacity(0)]),
+                    center: center, startRadius: outer * 0.4, endRadius: outer * 1.6
+                )
+            )
+            let star = starPath(center: center, outer: outer, inner: outer * 0.46)
+            context.fill(star, with: .color(Color(red: 1.0, green: 0.8, blue: 0.1)))
+            context.stroke(
+                star,
+                with: .color(.white),
+                style: StrokeStyle(lineWidth: max(1.5, outer * 0.14), lineJoin: .round)
+            )
+        }
+    }
+
+    /// A five-pointed star with one point straight up.
+    nonisolated static func starPath(center: CGPoint, outer: CGFloat, inner: CGFloat) -> Path {
+        var path = Path()
+        for index in 0..<10 {
+            let radius = index.isMultiple(of: 2) ? outer : inner
+            let angle = -Double.pi / 2 + Double(index) * Double.pi / 5
+            let point = CGPoint(x: center.x + radius * CGFloat(cos(angle)), y: center.y + radius * CGFloat(sin(angle)))
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
     }
 
     private nonisolated static func drawEmoji(

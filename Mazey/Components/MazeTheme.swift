@@ -5,6 +5,18 @@
 
 import SwiftUI
 
+/// A collectible picture. Earning one means finishing a maze in its theme.
+nonisolated struct Sticker: Hashable, Sendable {
+    let emoji: String
+    /// Said by VoiceOver, since an emoji alone is not a good description.
+    let name: String
+
+    init(_ emoji: String, _ name: String) {
+        self.emoji = emoji
+        self.name = name
+    }
+}
+
 /// A look for one maze: colors plus emoji for the player, start, finish and scenery.
 /// Emoji keep the themes free of asset files and identical on every platform.
 nonisolated struct MazeTheme: Identifiable, Sendable {
@@ -17,6 +29,8 @@ nonisolated struct MazeTheme: Identifiable, Sendable {
     let finishEmoji: String
     /// Scenery scattered at random over the maze cells and the background.
     let decorations: [String]
+    /// The stickers that can be earned in this theme, in the order they are handed out.
+    let stickers: [Sticker]
 
     // Colors
     let backgroundTop: Color
@@ -36,75 +50,11 @@ nonisolated struct MazeTheme: Identifiable, Sendable {
 }
 
 nonisolated extension MazeTheme {
-    static let space = MazeTheme(
-        id: "space", name: "Space",
-        playerEmoji: "🚀", startEmoji: "🌍", finishEmoji: "🪐",
-        decorations: ["⭐️", "✨", "☄️", "🛸", "🌙"],
-        backgroundTop: Color(red: 0.10, green: 0.08, blue: 0.30),
-        backgroundBottom: Color(red: 0.32, green: 0.12, blue: 0.48),
-        paper: Color(red: 0.14, green: 0.13, blue: 0.36),
-        wall: Color(red: 0.72, green: 0.67, blue: 1.00),
-        path: Color(red: 0.30, green: 0.85, blue: 0.95),
-        hint: Color(red: 1.00, green: 0.85, blue: 0.30),
-        startTint: Color(red: 0.35, green: 0.85, blue: 0.55),
-        finishTint: Color(red: 1.00, green: 0.55, blue: 0.70),
-        accent: Color(red: 1.00, green: 0.55, blue: 0.20),
-        ink: Color(red: 0.20, green: 0.15, blue: 0.50),
-        isDark: true
-    )
-
-    static let dinosaur = MazeTheme(
-        id: "dinosaur", name: "Dinosaur",
-        playerEmoji: "🦕", startEmoji: "🌴", finishEmoji: "🥚",
-        decorations: ["🌿", "🌴", "🦴", "🌋", "🍃", "🪨"],
-        backgroundTop: Color(red: 0.80, green: 0.93, blue: 0.70),
-        backgroundBottom: Color(red: 0.98, green: 0.88, blue: 0.62),
-        paper: Color(red: 1.00, green: 0.97, blue: 0.86),
-        wall: Color(red: 0.36, green: 0.45, blue: 0.22),
-        path: Color(red: 0.40, green: 0.72, blue: 0.33),
-        hint: Color(red: 0.95, green: 0.55, blue: 0.15),
-        startTint: Color(red: 0.45, green: 0.75, blue: 0.35),
-        finishTint: Color(red: 0.95, green: 0.65, blue: 0.35),
-        accent: Color(red: 0.85, green: 0.45, blue: 0.15),
-        ink: Color(red: 0.30, green: 0.38, blue: 0.18),
-        isDark: false
-    )
-
-    static let ocean = MazeTheme(
-        id: "ocean", name: "Ocean",
-        playerEmoji: "🐠", startEmoji: "🌊", finishEmoji: "🐚",
-        decorations: ["🫧", "🪸", "🐙", "🐡", "⭐️", "🦀"],
-        backgroundTop: Color(red: 0.65, green: 0.90, blue: 1.00),
-        backgroundBottom: Color(red: 0.30, green: 0.62, blue: 0.90),
-        paper: Color(red: 0.90, green: 0.98, blue: 1.00),
-        wall: Color(red: 0.10, green: 0.35, blue: 0.60),
-        path: Color(red: 0.20, green: 0.75, blue: 0.80),
-        hint: Color(red: 1.00, green: 0.75, blue: 0.20),
-        startTint: Color(red: 0.35, green: 0.80, blue: 0.75),
-        finishTint: Color(red: 1.00, green: 0.65, blue: 0.55),
-        accent: Color(red: 1.00, green: 0.50, blue: 0.35),
-        ink: Color(red: 0.08, green: 0.30, blue: 0.55),
-        isDark: false
-    )
-
-    static let farm = MazeTheme(
-        id: "farm", name: "Farm",
-        playerEmoji: "🐰", startEmoji: "🏡", finishEmoji: "🥕",
-        decorations: ["🌻", "🌷", "🦋", "🐝", "🌼", "🍄"],
-        backgroundTop: Color(red: 0.78, green: 0.93, blue: 0.98),
-        backgroundBottom: Color(red: 0.80, green: 0.93, blue: 0.55),
-        paper: Color(red: 1.00, green: 0.98, blue: 0.88),
-        wall: Color(red: 0.55, green: 0.35, blue: 0.20),
-        path: Color(red: 0.96, green: 0.60, blue: 0.25),
-        hint: Color(red: 0.35, green: 0.65, blue: 0.95),
-        startTint: Color(red: 0.55, green: 0.80, blue: 0.40),
-        finishTint: Color(red: 1.00, green: 0.70, blue: 0.40),
-        accent: Color(red: 0.40, green: 0.70, blue: 0.30),
-        ink: Color(red: 0.45, green: 0.28, blue: 0.15),
-        isDark: false
-    )
-
-    static let all: [MazeTheme] = [.space, .dinosaur, .ocean, .farm]
+    static let all: [MazeTheme] = [
+        .space, .dinosaur, .ocean, .farm,
+        .unicorn, .vehicles, .robots,
+        .spring, .summer, .autumn, .winter,
+    ]
 
     /// The theme for a maze seed. The same seed always gets the same theme, but it is
     /// never the same as `previous`, so New Maze always looks different.

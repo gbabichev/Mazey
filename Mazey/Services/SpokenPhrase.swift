@@ -24,6 +24,13 @@ nonisolated enum SpokenPhrase: Hashable, Sendable {
             case "dinosaur": "Help the dinosaur find its egg!"
             case "ocean": "Help the fish find the shell!"
             case "farm": "Help the bunny find the carrot!"
+            case "unicorn": "Help the unicorn find the castle!"
+            case "vehicles": "Help the car reach the finish!"
+            case "robots": "Help the robot find its battery!"
+            case "spring": "Help the bee find the tulip!"
+            case "summer": "Help the surfer find the ice cream!"
+            case "autumn": "Help the fox find the pumpkin!"
+            case "winter": "Help the penguin find the snowman!"
             default: "Drag to the finish!"
             }
         }

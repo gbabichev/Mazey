@@ -26,7 +26,7 @@ nonisolated struct MazeCriteria: Equatable, Sendable {
     }
 }
 
-nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable, Codable {
     case beginner, easy, medium, hard
 
     var id: String { rawValue }
@@ -39,6 +39,16 @@ nonisolated enum MazeDifficulty: String, CaseIterable, Identifiable, Sendable {
         case .easy: 36
         case .medium: 81
         case .hard: 144
+        }
+    }
+
+    /// How many stars sit in a maze for the player to collect along the way.
+    var collectibleCount: Int {
+        switch self {
+        case .beginner: 3
+        case .easy: 4
+        case .medium: 6
+        case .hard: 8
         }
     }
 

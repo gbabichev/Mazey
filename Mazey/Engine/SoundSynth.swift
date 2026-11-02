@@ -46,6 +46,12 @@ nonisolated enum SoundSynth {
         case .retrace(let length):
             let pitch = frequency(semitonesAboveC5: stepScale[abs(length) % stepScale.count])
             return [Note(frequency: pitch, start: 0, duration: 0.12, gain: 0.3, timbre: .soft)]
+        case .collect(let number):
+            let step = stepScale[max(0, number - 1) % stepScale.count]
+            return [
+                Note(frequency: frequency(semitonesAboveC5: step + 12), start: 0, duration: 0.28, gain: 0.4, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: step + 19), start: 0.05, duration: 0.25, gain: 0.25, timbre: .bell),
+            ]
         case .finish:
             return finishFanfare
         case .hint(let level):
@@ -122,6 +128,57 @@ nonisolated enum SoundSynth {
                 Note(frequency: frequency(semitonesAboveC5: 7), start: 0.32, duration: 0.25, gain: 0.35, timbre: .bell),
                 Note(frequency: frequency(semitonesAboveC5: 12), start: 0.42, duration: 0.3, gain: 0.35, timbre: .bell),
             ]
+        case "unicorn":
+            // A magic harp glissando up, ending on a twinkle.
+            var notes = (0..<7).map { index in
+                Note(frequency: frequency(semitonesAboveC5: Double(stepScale[index % stepScale.count] - 5)), start: Double(index) * 0.06, duration: 0.4, gain: 0.3, timbre: .bell)
+            }
+            notes.append(Note(frequency: frequency(semitonesAboveC5: 28), start: 0.45, duration: 0.5, gain: 0.25, timbre: .bell))
+            return notes
+        case "vehicles":
+            // Two honks and an engine revving up.
+            return [
+                Note(frequency: 330, start: 0, duration: 0.14, gain: 0.35, timbre: .buzz),
+                Note(frequency: 330, start: 0.2, duration: 0.14, gain: 0.35, timbre: .buzz),
+                Note(frequency: 70, start: 0.4, duration: 0.4, gain: 0.35, timbre: .buzz, endFrequency: 160),
+            ]
+        case "robots":
+            // Cheerful beeps and boops.
+            return [
+                Note(frequency: 880, start: 0, duration: 0.07, gain: 0.3, timbre: .soft),
+                Note(frequency: 1320, start: 0.09, duration: 0.07, gain: 0.3, timbre: .soft),
+                Note(frequency: 660, start: 0.18, duration: 0.07, gain: 0.3, timbre: .soft),
+                Note(frequency: 990, start: 0.27, duration: 0.18, gain: 0.3, timbre: .soft, endFrequency: 1500),
+            ]
+        case "spring":
+            // Two quick bird tweets.
+            return [
+                Note(frequency: 1800, start: 0, duration: 0.09, gain: 0.3, timbre: .soft, endFrequency: 2600),
+                Note(frequency: 2400, start: 0.1, duration: 0.08, gain: 0.3, timbre: .soft, endFrequency: 1900),
+                Note(frequency: 2000, start: 0.3, duration: 0.09, gain: 0.3, timbre: .soft, endFrequency: 2800),
+                Note(frequency: frequency(semitonesAboveC5: 16), start: 0.45, duration: 0.35, gain: 0.25, timbre: .bell),
+            ]
+        case "summer":
+            // A wave rolling in, then a bright strum.
+            return [
+                Note(frequency: 0, start: 0, duration: 0.5, gain: 0.18, timbre: .noise),
+                Note(frequency: frequency(semitonesAboveC5: 0), start: 0.4, duration: 0.35, gain: 0.3, timbre: .pluck),
+                Note(frequency: frequency(semitonesAboveC5: 4), start: 0.46, duration: 0.35, gain: 0.3, timbre: .pluck),
+                Note(frequency: frequency(semitonesAboveC5: 7), start: 0.52, duration: 0.4, gain: 0.3, timbre: .pluck),
+            ]
+        case "autumn":
+            // Rustling leaves and a gentle low note.
+            return [
+                Note(frequency: 0, start: 0, duration: 0.35, gain: 0.16, timbre: .noise),
+                Note(frequency: 0, start: 0.25, duration: 0.3, gain: 0.12, timbre: .noise),
+                Note(frequency: frequency(semitonesAboveC5: -12), start: 0.35, duration: 0.5, gain: 0.35, timbre: .pluck),
+                Note(frequency: frequency(semitonesAboveC5: -5), start: 0.5, duration: 0.5, gain: 0.3, timbre: .pluck),
+            ]
+        case "winter":
+            // Sleigh bells.
+            return (0..<6).map { index in
+                Note(frequency: 2400 + Double(index % 3) * 300, start: Double(index) * 0.07, duration: 0.3, gain: 0.22, timbre: .bell)
+            }
         default:
             return [
                 Note(frequency: frequency(semitonesAboveC5: 12), start: 0, duration: 0.3, gain: 0.35, timbre: .bell),

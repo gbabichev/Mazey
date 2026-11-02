@@ -591,10 +591,10 @@ struct MazeEngineTests {
 
     private let allEffects: [SoundEffect] = [
         .step(0), .step(1), .step(9), .step(10), .step(57), .retrace(0), .retrace(4), .finish,
-        .hint(.small), .hint(.medium), .hint(.full), .restart, .soundOn,
+        .hint(.small), .hint(.medium), .hint(.full), .restart, .soundOn, .collect(1), .collect(8),
         .newMaze(themeID: "space"), .newMaze(themeID: "dinosaur"), .newMaze(themeID: "ocean"),
         .newMaze(themeID: "farm"), .newMaze(themeID: "unknown"),
-    ]
+    ] + MazeTheme.all.map { .newMaze(themeID: $0.id) }
 
     @Test func everySoundIsWellFormed() {
         for effect in allEffects {
@@ -643,6 +643,11 @@ struct MazeEngineTests {
         }
     }
 
+    /// Star pickups depend on where the stars happen to be, so tests about steps ignore them.
+    private func withoutCollects(_ effects: [SoundEffect]) -> [SoundEffect] {
+        effects.filter { if case .collect = $0 { false } else { true } }
+    }
+
     @Test func drawingPlaysRisingStepsAndRetracingPlaysSofterOnes() throws {
         let spy = SoundSpy()
         let session = MazeGameSession(difficulty: .medium, seed: 21, sounds: spy, defaults: isolatedDefaults())
@@ -650,10 +655,10 @@ struct MazeEngineTests {
         func at(_ index: Int) -> CGPoint { center(row: route[index].row, column: route[index].column) }
         session.drag(from: at(0), to: at(1))
         session.drag(from: at(1), to: at(2))
-        #expect(spy.played == [.step(1), .step(2)])
+        #expect(withoutCollects(spy.played) == [.step(1), .step(2)])
         session.drag(from: at(2), to: at(1))
-        #expect(spy.played.last == .retrace(1))
-        #expect(spy.played.count == 3)
+        #expect(withoutCollects(spy.played).last == .retrace(1))
+        #expect(withoutCollects(spy.played).count == 3)
     }
 
     @Test func nothingPlaysWhenTheDragDoesNotMoveThePath() {
@@ -906,6 +911,313 @@ struct MazeEngineTests {
         // Retracing is gentler than the quietest step.
         if case .tick(let back) = HapticKind.kind(for: .retrace(3)) { #expect(back < intensities.first!) }
         #expect(HapticKind.kind(for: .finish) == .celebrate)
+    }
+
+    // MARK: - Themes and stickers
+
+    @Test func everyThemeHasItsOwnStickersAndNoStarShapedScenery() {
+        #expect(MazeTheme.all.count >= 11)
+        let starShapes = ["⭐️", "🌟", "✨", "💫"]
+        for theme in MazeTheme.all {
+            #expect(theme.stickers.count >= 8, "\(theme.id)")
+            #expect(Set(theme.stickers.map(\.emoji)).count == theme.stickers.count, "\(theme.id) repeats a sticker")
+            #expect(Set(theme.stickers.map(\.name)).count == theme.stickers.count)
+            #expect(theme.stickers.allSatisfy { !$0.name.isEmpty })
+            for decoration in theme.decorations {
+                #expect(!starShapes.contains(decoration), "\(theme.id) scenery \(decoration) looks like a collectible star")
+            }
+        }
+        #expect(MazeTheme.all.map(\.playerEmoji).count == Set(MazeTheme.all.map(\.id)).count)
+    }
+
+    @Test func everyThemeIsReachedAcrossSeeds() {
+        let used = Set((0..<400 as Range<UInt64>).map { MazeTheme.theme(for: $0).id })
+        #expect(used.count == MazeTheme.all.count)
+    }
+
+    @Test func awarderHandsOutNewStickersFirst() {
+        var progress = Progress()
+        var earned: Set<Int> = []
+        for seed in 0..<8 as Range<UInt64> {
+            let index = StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: false, seed: seed)
+            #expect(!earned.contains(index), "gave a duplicate while some were missing")
+            earned.insert(index)
+            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, gold: false, firstEarned: Date())
+        }
+        #expect(earned.count == 8)
+    }
+
+    @Test func awarderUpgradesPlainStickersOnAGoldRunOnceTheBookIsFull() {
+        var progress = Progress()
+        for index in 0..<8 {
+            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, gold: index != 5, firstEarned: Date())
+        }
+        for seed in 0..<20 as Range<UInt64> {
+            #expect(StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: true, seed: seed) == 5)
+        }
+        // Without a gold run, any sticker may come again.
+        let picks = Set((0..<40 as Range<UInt64>).map { StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: false, seed: $0) })
+        #expect(picks.count > 1)
+    }
+
+    // MARK: - Stars and timing
+
+    @Test func starsAreDistinctDeterministicAndAvoidTheEnds() {
+        for difficulty in MazeDifficulty.allCases {
+            for seed in 0..<40 as Range<UInt64> {
+                let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
+                let stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
+                #expect(stars.count == difficulty.collectibleCount)
+                #expect(!stars.contains(maze.start) && !stars.contains(maze.finish))
+                #expect(stars.allSatisfy { maze.contains($0) })
+                #expect(stars == StarPlacement.cells(in: maze, count: difficulty.collectibleCount))
+            }
+        }
+        let tiny = MazeGenerator.generate(rows: 2, columns: 2, seed: 1)
+        #expect(StarPlacement.cells(in: tiny, count: 50).count <= 2, "never more stars than free cells")
+        #expect(StarPlacement.cells(in: tiny, count: 0).isEmpty)
+    }
+
+    @Test func starsGiveNothingAwayAboutTheRoute() throws {
+        // If stars avoided (or favoured) the winning route, the share of stars on it would
+        // differ from the share of cells on it. Over many mazes the two must agree.
+        var starsOnRoute = 0.0, totalStars = 0.0, routeCells = 0.0, freeCells = 0.0
+        for seed in 0..<400 as Range<UInt64> {
+            let maze = MazeGenerator.generate(difficulty: .medium, seed: seed)
+            let route = Set(try #require(MazeSolver.solve(maze, from: maze.start)))
+            let stars = StarPlacement.cells(in: maze, count: 6)
+            starsOnRoute += Double(stars.filter { route.contains($0) }.count)
+            totalStars += Double(stars.count)
+            routeCells += Double(route.count - 2)       // minus start and finish
+            freeCells += Double(maze.cellCount - 2)
+        }
+        let starShare = starsOnRoute / totalStars
+        let cellShare = routeCells / freeCells
+        #expect(abs(starShare - cellShare) < 0.04, "stars on route \(starShare) vs cells on route \(cellShare)")
+    }
+
+    @Test func theTimerCountsBusyTimeAndCapsPauses() {
+        var timer = ActivityTimer()
+        let start = Date(timeIntervalSince1970: 1_000)
+        #expect(!timer.hasStarted)
+        timer.record(at: start)
+        #expect(timer.hasStarted && timer.total == 0)
+        timer.record(at: start.addingTimeInterval(5))
+        timer.record(at: start.addingTimeInterval(9))
+        #expect(timer.total == 9)
+        // A long break only counts up to the cap.
+        timer.record(at: start.addingTimeInterval(9 + 600))
+        #expect(timer.total == 9 + ActivityTimer.idleCap)
+        // A clock that jumps backwards never subtracts.
+        timer.record(at: start)
+        #expect(timer.total == 9 + ActivityTimer.idleCap)
+        timer.reset()
+        #expect(!timer.hasStarted && timer.total == 0)
+    }
+
+    // MARK: - Collection store and statistics
+
+    private func record(_ store: CollectionStore, theme: MazeTheme = .space, difficulty: MazeDifficulty = .easy,
+                        seconds: Double = 30, stars: Int = 1, of total: Int = 4, seed: UInt64 = 0, at date: Date = Date()) -> FinishReward {
+        store.recordFinish(theme: theme, difficulty: difficulty, rows: 6, columns: 6, seconds: seconds,
+                           starsCollected: stars, starsTotal: total, seed: seed, now: date)
+    }
+
+    @Test func finishingAwardsAStickerAndGoldNeedsEveryStar() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        let plain = record(store, stars: 2, of: 4)
+        #expect(plain.isNew && !plain.isGold)
+        #expect(plain.sticker == MazeTheme.space.stickers[plain.stickerIndex])
+        #expect(store.entry(themeID: "space", index: plain.stickerIndex)?.gold == false)
+
+        let gold = record(store, stars: 4, of: 4, seed: 1)
+        #expect(gold.isGold)
+        #expect(store.entry(themeID: "space", index: gold.stickerIndex)?.gold == true)
+        #expect(store.ownedStickerCount == 2)
+        #expect(store.progress.finishes.count == 2)
+    }
+
+    @Test func aMazeWithNoStarsCannotBeGold() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        #expect(!record(store, stars: 0, of: 0).isGold)
+    }
+
+    @Test func theBookFillsUpThenRepeatsAreCounted() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        for seed in 0..<8 as Range<UInt64> { #expect(record(store, seed: seed).isNew) }
+        #expect(store.ownedCount(in: .space) == MazeTheme.space.stickers.count)
+        let again = record(store, seed: 99)
+        #expect(!again.isNew)
+        #expect(store.entry(themeID: "space", index: again.stickerIndex)?.count == 2)
+        #expect(store.ownedStickerCount == 8, "a repeat does not add a different sticker")
+    }
+
+    @Test func progressIsSavedAndLoadedAgain() {
+        let defaults = isolatedDefaults()
+        let first = CollectionStore(defaults: defaults)
+        _ = record(first, theme: .farm, seconds: 41, stars: 3, of: 3)
+        let second = CollectionStore(defaults: defaults)
+        #expect(second.progress == first.progress)
+        #expect(second.statistics.totalFinished == 1)
+        // Damaged data is ignored rather than crashing.
+        defaults.set(Data([1, 2, 3]), forKey: CollectionStore.key)
+        #expect(CollectionStore(defaults: defaults).progress == Progress())
+    }
+
+    @Test func oldRecordsAreTrimmedPastTheLimit() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        for index in 0..<(CollectionStore.maximumRecords + 25) { _ = record(store, seconds: Double(index)) }
+        #expect(store.progress.finishes.count == CollectionStore.maximumRecords)
+        #expect(store.progress.finishes.first?.seconds == 25, "the oldest were dropped")
+    }
+
+    @Test func aPersonalBestIsOnlyAnnouncedAfterSomeHistory() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        for index in 0..<CollectionStore.bestNeedsHistory {
+            #expect(!record(store, difficulty: .easy, seconds: 100 - Double(index)).isPersonalBest, "too early to call it a best")
+        }
+        #expect(record(store, difficulty: .easy, seconds: 10).isPersonalBest)
+        #expect(!record(store, difficulty: .easy, seconds: 50).isPersonalBest)
+        // Another level has its own history.
+        #expect(!record(store, difficulty: .hard, seconds: 1).isPersonalBest)
+    }
+
+    @Test func newestStickersComeNewestFirst() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        let base = Date(timeIntervalSince1970: 10_000)
+        let first = record(store, theme: .space, at: base)
+        let second = record(store, theme: .ocean, at: base.addingTimeInterval(60))
+        let third = record(store, theme: .farm, at: base.addingTimeInterval(120))
+        let newest = store.newestStickers(2)
+        #expect(newest.map(\.sticker) == [third.sticker, second.sticker])
+        #expect(store.newestStickers(10).last?.sticker == first.sticker)
+    }
+
+    @Test func statisticsAddUp() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let day = 86_400.0
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        func finish(_ offsetDays: Double, _ difficulty: MazeDifficulty, _ seconds: Double, stars: Int, of total: Int) -> FinishRecord {
+            FinishRecord(date: start.addingTimeInterval(offsetDays * day), difficulty: difficulty, themeID: "space",
+                         rows: 6, columns: 6, seconds: seconds, starsCollected: stars, starsTotal: total, stickerIndex: 0)
+        }
+        let stats = Statistics(finishes: [
+            finish(0, .easy, 40, stars: 4, of: 4),
+            finish(0, .easy, 20, stars: 2, of: 4),
+            finish(1, .hard, 120, stars: 8, of: 8),
+            finish(2, .easy, 30, stars: 0, of: 4),
+        ], calendar: calendar)
+        #expect(stats.totalFinished == 4)
+        #expect(stats.totalStars == 14)
+        #expect(stats.perfectMazes == 2)
+        #expect(stats.daysPlayed == 3)
+        #expect(stats.currentStreak(today: start.addingTimeInterval(2 * day)) == 3)
+        #expect(stats.currentStreak(today: start.addingTimeInterval(3 * day)) == 3, "yesterday still counts")
+        #expect(stats.currentStreak(today: start.addingTimeInterval(5 * day)) == 0, "a gap breaks the streak")
+        let easy = stats.difficulty(.easy)
+        #expect(easy == DifficultyStatistics(count: 3, average: 30, fastest: 20))
+        #expect(stats.difficulty(.beginner) == nil)
+        #expect(stats.recent(2).map(\.seconds) == [30, 120])
+        #expect(Statistics.format(65) == "1:05")
+        #expect(Statistics.format(7) == "0:07")
+        #expect(Statistics.format(-3) == "0:00")
+        #expect(Statistics(finishes: []).currentStreak() == 0)
+    }
+
+    // MARK: - Stars in the session
+
+    /// Walks the session's path to `cell` along the maze's own route, the way a finger would.
+    private func walk(_ session: MazeGameSession, to cell: GridPoint) {
+        guard let route = MazeSolver.solve(session.maze, from: session.path.end, to: cell) else { return }
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+    }
+
+    @Test func eachMazeHasItsStarsAndWalkingOverOneCollectsIt() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .medium, seed: 12, sounds: spy, defaults: isolatedDefaults())
+        #expect(session.stars.count == MazeDifficulty.medium.collectibleCount)
+        #expect(session.collectedStars.isEmpty)
+        let star = try #require(session.stars.sorted { ($0.row, $0.column) < ($1.row, $1.column) }.first)
+        walk(session, to: star)
+        // The route may have crossed the finish first; either way the star is in hand.
+        #expect(session.collectedStars.contains(star))
+        #expect(session.uncollectedStars.count == session.stars.count - session.collectedStars.count)
+        #expect(spy.played.contains(.collect(1)))
+    }
+
+    @Test func collectedStarsStayCollectedWhenTheRouteIsRetraced() throws {
+        let session = MazeGameSession(difficulty: .medium, seed: 12, defaults: isolatedDefaults())
+        let star = try #require(session.stars.sorted { ($0.row, $0.column) < ($1.row, $1.column) }.first)
+        walk(session, to: star)
+        let collected = session.collectedStars
+        walk(session, to: session.maze.start)
+        #expect(session.collectedStars == collected)
+    }
+
+    @Test func starsResetWithANewMazeOrARestart() throws {
+        let session = MazeGameSession(difficulty: .medium, seed: 12, defaults: isolatedDefaults())
+        let star = try #require(session.stars.first)
+        walk(session, to: star)
+        #expect(!session.collectedStars.isEmpty)
+        session.restart()
+        #expect(session.collectedStars.isEmpty)
+        #expect(session.stars.count == MazeDifficulty.medium.collectibleCount)
+        let before = session.stars
+        session.newMaze(seed: 5)
+        #expect(session.collectedStars.isEmpty)
+        #expect(session.stars != before)
+    }
+
+    @Test func aFullGoldRunEarnsAGoldSticker() throws {
+        // Find a maze where every star can be picked up before the finish is crossed.
+        for seed in 0..<300 as Range<UInt64> {
+            let session = MazeGameSession(difficulty: .easy, seed: seed, defaults: isolatedDefaults())
+            for star in session.stars.sorted(by: { ($0.row, $0.column) < ($1.row, $1.column) }) where !session.isComplete {
+                walk(session, to: star)
+            }
+            guard !session.isComplete, session.uncollectedStars.isEmpty else { continue }
+            walk(session, to: session.maze.finish)
+            #expect(session.isComplete)
+            let reward = try #require(session.lastReward)
+            #expect(reward.isGold)
+            #expect(reward.starsCollected == reward.starsTotal)
+            #expect(session.collection.entry(themeID: reward.themeID, index: reward.stickerIndex)?.gold == true)
+            return
+        }
+        Issue.record("no seed allowed a full gold run")
+    }
+
+    @Test func finishingWithoutAllStarsEarnsAPlainStickerAndIsRecorded() throws {
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+        #expect(session.isComplete)
+        let reward = try #require(session.lastReward)
+        #expect(reward.isNew)
+        #expect(reward.themeID == session.theme.id)
+        #expect(reward.starsTotal == MazeDifficulty.easy.collectibleCount)
+        #expect(session.collection.statistics.totalFinished == 1)
+        #expect(session.collection.ownedStickerCount == 1)
+        // The reward goes away with the next maze.
+        session.newMaze(seed: 3)
+        #expect(session.lastReward == nil)
+    }
+
+    @Test func theClockMeasuresActiveTimeIntoTheRecord() throws {
+        var now = Date(timeIntervalSince1970: 50_000)
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults(), clock: { now })
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (index, pair) in zip(route, route.dropFirst()).enumerated() {
+            if index > 0 { now = now.addingTimeInterval(2) }
+            session.drag(from: center(row: pair.0.row, column: pair.0.column), to: center(row: pair.1.row, column: pair.1.column))
+        }
+        let record = try #require(session.collection.progress.finishes.first)
+        #expect(record.seconds == Double(2 * (route.count - 2)), "two seconds between each of the moves")
     }
 
     // MARK: - Stress

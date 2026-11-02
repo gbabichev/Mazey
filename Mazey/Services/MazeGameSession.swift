@@ -22,6 +22,17 @@ final class MazeGameSession {
     private(set) var space: MazeSpace?
     private var seed: UInt64
 
+    /// Where the stars are in this maze, and which of them have been picked up.
+    private(set) var stars: Set<GridPoint> = []
+    private(set) var collectedStars: Set<GridPoint> = []
+    /// What the last finished maze earned, shown on the celebration card.
+    private(set) var lastReward: FinishReward?
+    /// The sticker book and the history of finished mazes.
+    let collection: CollectionStore
+
+    @ObservationIgnored private var timer = ActivityTimer()
+    @ObservationIgnored private let clock: () -> Date
+
     /// Whether sound effects play. Remembered between launches.
     var isSoundOn: Bool {
         didSet {
@@ -63,11 +74,16 @@ final class MazeGameSession {
         difficulty: MazeDifficulty = .beginner,
         seed: UInt64 = .random(in: .min ... .max),
         sounds: any SoundPlaying = SilentSounds(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        collection: CollectionStore? = nil,
+        clock: @escaping () -> Date = Date.init
     ) {
         let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
         self.sounds = sounds
         self.defaults = defaults
+        self.collection = collection ?? CollectionStore(defaults: defaults)
+        self.clock = clock
+        self.stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
         self.isVoiceOn = defaults.object(forKey: Self.voiceKey) as? Bool ?? true
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
@@ -79,8 +95,17 @@ final class MazeGameSession {
         self.path = MazePath(start: maze.start)
     }
 
+    /// Stars still waiting to be picked up.
+    var uncollectedStars: Set<GridPoint> { stars.subtracting(collectedStars) }
+
     /// True once the player has drawn any of the route.
     var hasProgress: Bool { path.cells.count > 1 }
+
+    /// Called when the player taps Play on the home screen: keep a maze in progress, but do not
+    /// bring back one that was already finished.
+    func prepareToPlay() {
+        if isComplete { newMaze() }
+    }
 
     // MARK: - Demo
 
@@ -119,6 +144,12 @@ final class MazeGameSession {
         guard fitted != maze else { return }
         maze = fitted
         path.reset(to: maze.start)
+        placeStars()
+    }
+
+    private func placeStars() {
+        stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
+        collectedStars = []
     }
 
     /// A maze for the current difficulty, shaped to fit the screen when its space is known.
@@ -140,6 +171,7 @@ final class MazeGameSession {
         if let difficulty { self.difficulty = difficulty }
         self.seed = seed
         maze = makeMaze(seed: seed)
+        placeStars()
         theme = MazeTheme.theme(for: seed, avoiding: theme)
         resetRoute()
         isDemoVisible = false
@@ -155,6 +187,9 @@ final class MazeGameSession {
 
     private func resetRoute() {
         path.reset(to: maze.start)
+        collectedStars = []
+        timer.reset()
+        lastReward = nil
         hintLevel = nil
         isComplete = false
         isDragLive = false
@@ -210,6 +245,8 @@ final class MazeGameSession {
         dismissDemo()
         let before = path.cells.count
         apply(path.move(to: path.end.moved(direction), in: maze))
+        noteProgress(from: before)
+        if path.end == maze.finish && !isComplete { finishMaze() }
         playPathSound(from: before)
     }
 
@@ -220,8 +257,19 @@ final class MazeGameSession {
         let moved = path.follow(pointer, in: maze, allowRetrace: isDragLive, finish: maze.finish)
         guard moved else { return }
         isDragLive = true
+        noteProgress(from: before)
         if path.end == maze.finish { finishMaze() }
         playPathSound(from: before)
+    }
+
+    /// Starts or advances the clock, and picks up any stars the path just reached.
+    private func noteProgress(from previousLength: Int) {
+        timer.record(at: clock())
+        guard path.cells.count > previousLength else { return }
+        for cell in path.cells[previousLength...] where stars.contains(cell) && !collectedStars.contains(cell) {
+            collectedStars.insert(cell)
+            play(.collect(collectedStars.count))
+        }
     }
 
     private func finishMaze() {
@@ -230,6 +278,17 @@ final class MazeGameSession {
         isDragLive = false
         completedMazes += 1
         defaults.set(completedMazes, forKey: Self.completedKey)
+        lastReward = collection.recordFinish(
+            theme: theme,
+            difficulty: difficulty,
+            rows: maze.rows,
+            columns: maze.columns,
+            seconds: timer.total,
+            starsCollected: collectedStars.count,
+            starsTotal: stars.count,
+            seed: seed,
+            now: clock()
+        )
     }
 
     /// A step sound when the path grew, a softer one when it shrank, and the fanfare at the finish.
@@ -248,7 +307,6 @@ final class MazeGameSession {
         switch result {
         case .appended:
             isDragLive = true
-            if path.end == maze.finish { finishMaze() }
         case .retraced:
             isDragLive = true
         case .ignored:

@@ -12,6 +12,9 @@ nonisolated enum SoundEffect: Hashable, Sendable {
     /// The path shrank. The number is its new length.
     case retrace(Int)
     case finish
+    /// A star was picked up. The number is how many have been collected in this maze,
+    /// which sets the pitch so a full set climbs the scale.
+    case collect(Int)
     case hint(MazeHintLevel)
     /// A new maze appeared, with a flourish that matches its theme.
     case newMaze(themeID: String)

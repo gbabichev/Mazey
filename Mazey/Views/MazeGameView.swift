@@ -7,23 +7,22 @@ import SwiftUI
 
 /// The single playable screen for the first milestone.
 struct MazeGameView: View {
-    @State private var session = MazeGameSession(sounds: SoundEngine.shared)
+    let session: MazeGameSession
     @State private var lastDragLocation: CGPoint?
     @State private var showsSettings = false
     @FocusState private var isFocused: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        NavigationStack {
-            content
-                .toolbar { toolbarContent }
-                .sheet(isPresented: $showsSettings) { SettingsView(session: session) }
-                #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarColorScheme(session.theme.isDark ? .dark : .light, for: .navigationBar)
-                #endif
-        }
+        content
+            .toolbar { toolbarContent }
+            .sheet(isPresented: $showsSettings) { SettingsView(session: session) }
+            .themedWindowAppearance(session.theme)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(session.theme.isDark ? .dark : .light, for: .navigationBar)
+            #endif
     }
 
     private var content: some View {
@@ -50,9 +49,19 @@ struct MazeGameView: View {
 
     // MARK: - Pieces
 
+    /// Where the difficulty menu and settings sit. On iPhone and iPad they must be pinned to the
+    /// leading side, or they get pulled into the trailing group beside the back button.
+    private var leadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: leadingPlacement) {
             Picker("Difficulty", selection: Binding(
                 get: { session.difficulty },
                 set: { session.newMaze(difficulty: $0) }
@@ -64,21 +73,16 @@ struct MazeGameView: View {
             .pickerStyle(.menu)
             .accessibilityLabel("Difficulty")
         }
-        ToolbarItem(placement: .navigation) {
-            Button {
-                session.isSoundOn.toggle()
-            } label: {
-                Image(systemName: session.isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-            }
-            .accessibilityLabel(session.isSoundOn ? "Sound on" : "Sound off")
-        }
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: leadingPlacement) {
             Button {
                 showsSettings = true
             } label: {
                 Image(systemName: "gearshape.fill")
             }
             .accessibilityLabel("Settings")
+        }
+        ToolbarItem(placement: .principal) {
+            StarProgress(collected: session.collectedStars.count, total: session.stars.count)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
@@ -120,7 +124,8 @@ struct MazeGameView: View {
                     hint: session.hintCells,
                     hintLevel: session.hintLevel,
                     theme: session.theme,
-                    showsPlayer: !session.isDemoVisible
+                    showsPlayer: !session.isDemoVisible,
+                    stars: session.uncollectedStars
                 )
                 .frame(width: frame.width, height: frame.height)
                 .contentShape(Rectangle())
@@ -151,7 +156,7 @@ struct MazeGameView: View {
                 }
                 .overlay {
                     if session.isComplete {
-                        CelebrationView(theme: session.theme) {
+                        CelebrationView(theme: session.theme, reward: session.lastReward) {
                             withAnimation { session.newMaze() }
                         }
                         .transition(.scale.combined(with: .opacity))
@@ -203,7 +208,7 @@ struct MazeGameView: View {
     /// under toolbar buttons. Wide (regular) windows also show status bar text such as the
     /// date and app name along the top edge, which needs more room.
     private var toolbarClearance: CGFloat {
-        horizontalSizeClass == .regular ? 240 : 230
+        horizontalSizeClass == .regular ? 260 : 240
     }
 
     private func direction(for key: KeyEquivalent) -> MazeDirection? {
@@ -218,5 +223,5 @@ struct MazeGameView: View {
 }
 
 #Preview {
-    MazeGameView()
+    NavigationStack { MazeGameView(session: MazeGameSession()) }
 }
