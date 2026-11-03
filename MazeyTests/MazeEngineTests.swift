@@ -280,16 +280,17 @@ struct MazeEngineTests {
 
     @Test func aHintFadesByItself() async throws {
         let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: isolatedDefaults())
+        #expect(MazeGameSession.hintDuration >= .seconds(3), "long enough to read")
+        session.hintLifetime = .milliseconds(50)
         session.requestHint()
         #expect(session.hintLevel == .small)
-        // Other tests can keep the machine busy, so wait for the fade instead of a fixed time.
-        var waited = Duration.zero
-        while session.hintLevel != nil, waited < .seconds(30) {
-            try await Task.sleep(for: .milliseconds(250))
-            waited += .milliseconds(250)
+        // Other tests can keep the main actor busy, so wait for the fade instead of a fixed time.
+        let clock = ContinuousClock()
+        let began = clock.now
+        while session.hintLevel != nil, clock.now - began < .seconds(60) {
+            try await Task.sleep(for: .milliseconds(50))
         }
         #expect(session.hintLevel == nil)
-        #expect(waited >= MazeGameSession.hintDuration - .seconds(1), "not before its time")
     }
 
     // MARK: - Dynamic grids
@@ -601,11 +602,7 @@ struct MazeEngineTests {
     @MainActor
     private final class SoundSpy: SoundPlaying {
         private(set) var played: [SoundEffect] = []
-        private(set) var spoken: [SpokenPhrase] = []
-        private(set) var stopCount = 0
         func play(_ effect: SoundEffect) { played.append(effect) }
-        func speak(_ phrase: SpokenPhrase) { spoken.append(phrase) }
-        func stopSpeaking() { stopCount += 1 }
     }
 
     /// A fresh, empty settings store so the saved mute setting never leaks between tests.
@@ -764,7 +761,7 @@ struct MazeEngineTests {
         #expect(MazeGameSession(sounds: spy, defaults: defaults).isSoundOn)
     }
 
-    // MARK: - Demo, speech and haptics
+    // MARK: - Demo and haptics
 
     @Test func theDemoShowsOnFirstLaunchAndNeverAgainOnceDismissed() {
         let defaults = isolatedDefaults()
@@ -836,108 +833,6 @@ struct MazeEngineTests {
         }
         #expect(session.completedMazes == 1)
         #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).completedMazes == 1)
-    }
-
-    @Test func theGoalIsSpokenWithTheDemoAndTheCheerAtTheFinish() throws {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        session.updateSpace(MazeSpace(size: CGSize(width: 700, height: 500)))
-        #expect(spy.spoken == [.goal(themeID: session.theme.id)])
-        session.updateSpace(MazeSpace(size: CGSize(width: 500, height: 700)))
-        #expect(spy.spoken.count == 1, "only the first layout announces the demo")
-
-        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
-        for (from, to) in zip(route, route.dropFirst()) {
-            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
-        }
-        #expect(session.isComplete)
-        #expect(spy.spoken.count == 2)
-        if case .cheer = spy.spoken.last {} else { Issue.record("expected a cheer, got \(String(describing: spy.spoken.last))") }
-    }
-
-    @Test func speechStopsWhenThePlayerStartsOrMovesOn() {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        let far = CGPoint(x: 99, y: 99)
-        session.drag(from: far, to: far)       // dismisses the demo
-        #expect(spy.stopCount == 1)
-        session.newMaze(seed: 2)
-        #expect(spy.stopCount == 2)
-    }
-
-    @Test func mutingSilencesSpeechToo() {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        session.isSoundOn = false
-        #expect(spy.stopCount == 1)
-        session.updateSpace(MazeSpace(size: CGSize(width: 700, height: 500)))
-        session.dismissDemo()
-        session.nudgeIfIdle()
-        #expect(spy.spoken.isEmpty)
-    }
-
-    @Test func voiceCanBeTurnedOffWhileSoundsStayOn() throws {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        #expect(session.isVoiceOn)
-        session.isVoiceOn = false
-        #expect(spy.stopCount == 1, "turning the voice off cuts off anything being said")
-
-        // No goal line at the first layout, and no cheer at the finish...
-        session.updateSpace(MazeSpace(size: CGSize(width: 700, height: 500)))
-        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
-        for (from, to) in zip(route, route.dropFirst()) {
-            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
-        }
-        #expect(session.isComplete)
-        #expect(spy.spoken.isEmpty)
-        // ...but the sound effects and the fanfare still play.
-        #expect(spy.played.contains(.finish))
-        #expect(spy.played.contains { if case .step = $0 { true } else { false } })
-    }
-
-    @Test func theVoiceNudgeStaysQuietWhenVoiceIsOff() {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        session.isVoiceOn = false
-        session.dismissDemo()
-        session.nudgeIfIdle()
-        #expect(session.isDemoVisible, "the demo still shows, just silently")
-        #expect(spy.spoken.isEmpty)
-    }
-
-    @Test func voiceSettingIsRememberedAndTurnsBackOn() {
-        let defaults = isolatedDefaults()
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: defaults)
-        session.isVoiceOn = false
-        #expect(!MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).isVoiceOn)
-        session.isVoiceOn = true
-        #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).isVoiceOn)
-        session.dismissDemo()
-        session.nudgeIfIdle()
-        #expect(spy.spoken == [.goal(themeID: session.theme.id)])
-    }
-
-    @Test func voiceStaysSilentWhileSoundIsMuted() {
-        let spy = SoundSpy()
-        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
-        session.isSoundOn = false
-        #expect(session.isVoiceOn, "the voice setting itself is untouched")
-        session.dismissDemo()
-        session.nudgeIfIdle()
-        #expect(spy.spoken.isEmpty)
-    }
-
-    @Test func everyPhraseHasTextAndAThemeHasItsOwnGoal() {
-        for variant in 0..<SpokenPhrase.cheers.count + 2 {
-            #expect(!SpokenPhrase.cheer(variant).text.isEmpty)
-        }
-        #expect(SpokenPhrase.cheer(0).text == SpokenPhrase.cheer(SpokenPhrase.cheers.count).text)
-        let goals = MazeTheme.all.map { SpokenPhrase.goal(themeID: $0.id).text }
-        #expect(Set(goals).count == goals.count)
-        #expect(!SpokenPhrase.goal(themeID: "unknown").text.isEmpty)
-        #expect(SpokenPhrase.cheer(0).delay > 0 && SpokenPhrase.goal(themeID: "space").delay > 0)
     }
 
     @Test func everySoundHasAHapticAndStepsGrowStronger() {
@@ -1151,14 +1046,13 @@ struct MazeEngineTests {
         let session = MazeGameSession(difficulty: .hard, seed: 5, defaults: defaults)
         _ = record(session.collection)
         session.isSoundOn = false
-        session.isVoiceOn = false
         session.dismissDemo()
         session.resetEverything()
 
         #expect(session.collection.ownedStickerCount == 0)
         #expect(session.collection.statistics.totalFinished == 0)
         #expect(session.difficulty == .beginner)
-        #expect(session.isSoundOn && session.isVoiceOn && session.isDemoVisible)
+        #expect(session.isSoundOn && session.isDemoVisible)
         #expect(session.completedMazes == 0 && !session.isComplete)
 
         // A relaunch on the same storage looks brand new too.

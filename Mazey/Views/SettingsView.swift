@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// Switches for what the app plays and says. The speaker button in the toolbar is a shortcut
+/// Switches for what the app plays. The speaker button in the toolbar is a shortcut
 /// for the first one.
 struct SettingsView: View {
     @Bindable var session: MazeGameSession
@@ -55,16 +55,6 @@ struct SettingsView: View {
             .toggleStyle(.switch)
         } footer: {
             Text("Sounds and vibration while you play.")
-        }
-
-        Section {
-            Toggle(isOn: $session.isVoiceOn) {
-                Label("Voice", systemImage: "person.wave.2.fill")
-            }
-            .toggleStyle(.switch)
-            .disabled(!session.isSoundOn)
-        } footer: {
-            Text(session.isSoundOn ? "Says what to do, and cheers when you finish." : "Turn on sound effects to use the voice.")
         }
 
         Section {

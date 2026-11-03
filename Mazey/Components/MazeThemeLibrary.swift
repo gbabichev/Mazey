@@ -6,7 +6,7 @@
 import SwiftUI
 
 /// Every theme the app ships with. A theme is just data: add one here and to `MazeTheme.all`,
-/// plus a sound flourish in `SoundSynth` and a goal line in `SpokenPhrase`.
+/// plus a sound flourish in `SoundSynth`.
 ///
 /// Scenery emoji avoid star shapes, because the collectible stars are drawn as gold stars.
 nonisolated extension MazeTheme {

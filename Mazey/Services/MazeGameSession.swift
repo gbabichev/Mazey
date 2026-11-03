@@ -42,7 +42,6 @@ final class MazeGameSession {
         didSet {
             defaults.set(isSoundOn, forKey: Self.soundKey)
             if isSoundOn && !oldValue { sounds.play(.soundOn) }
-            if !isSoundOn { sounds.stopSpeaking() }
         }
     }
 
@@ -52,18 +51,8 @@ final class MazeGameSession {
     /// How many mazes have been finished, remembered between launches.
     private(set) var completedMazes: Int
 
-    /// Whether the app speaks (the goal with the demo, and the cheer at the finish).
-    /// Remembered between launches, and only matters while sound is on.
-    var isVoiceOn: Bool {
-        didSet {
-            defaults.set(isVoiceOn, forKey: Self.voiceKey)
-            if !isVoiceOn { sounds.stopSpeaking() }
-        }
-    }
-
     static let soundKey = "soundEnabled"
     static let difficultyKey = "difficulty"
-    static let voiceKey = "voiceEnabled"
     static let demoSeenKey = "demoSeen"
     static let completedKey = "completedMazes"
     /// The idle nudge stops once a child has finished this many mazes: they know what to do.
@@ -94,7 +83,6 @@ final class MazeGameSession {
         self.clock = clock
         self.stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
-        self.isVoiceOn = defaults.object(forKey: Self.voiceKey) as? Bool ?? true
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
         self.completedMazes = defaults.integer(forKey: Self.completedKey)
         self.difficulty = difficulty
@@ -130,7 +118,6 @@ final class MazeGameSession {
         guard isDemoVisible else { return }
         isDemoVisible = false
         defaults.set(true, forKey: Self.demoSeenKey)
-        sounds.stopSpeaking()
     }
 
     /// Brings the demo back for a player who has not started the maze. Called after the
@@ -138,7 +125,6 @@ final class MazeGameSession {
     func nudgeIfIdle() {
         guard !isDemoVisible, !hasProgress, !isComplete, completedMazes < Self.nudgeUntilCompleted else { return }
         isDemoVisible = true
-        speak(.goal(themeID: theme.id))
     }
 
     /// Called when the screen's usable space changes (first layout, rotation, folding the Duo,
@@ -146,9 +132,7 @@ final class MazeGameSession {
     /// in the shape that fits the new space. A maze in progress is left alone and re-fitted.
     func updateSpace(_ newSpace: MazeSpace) {
         guard newSpace != space else { return }
-        let isFirstLayout = space == nil
         space = newSpace
-        defer { if isFirstLayout && isDemoVisible { speak(.goal(themeID: theme.id)) } }
         guard !hasProgress else { return }
         let fitted = makeMaze(seed: seed)
         guard fitted != maze else { return }
@@ -210,13 +194,12 @@ final class MazeGameSession {
     /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
     func resetEverything() {
         collection.reset()
-        for key in [Self.soundKey, Self.voiceKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
+        for key in [Self.soundKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
             defaults.removeObject(forKey: key)
         }
         completedMazes = 0
         lastReward = nil
         isSoundOn = true
-        isVoiceOn = true
         newMaze(difficulty: .beginner)
         defaults.removeObject(forKey: Self.difficultyKey)
         isDemoVisible = true
@@ -234,7 +217,6 @@ final class MazeGameSession {
         theme = MazeTheme.theme(for: seed, avoiding: theme)
         resetRoute()
         isDemoVisible = false
-        sounds.stopSpeaking()
         play(.newMaze(themeID: theme.id))
     }
 
@@ -259,10 +241,6 @@ final class MazeGameSession {
         if isSoundOn { sounds.play(effect) }
     }
 
-    private func speak(_ phrase: SpokenPhrase) {
-        if isSoundOn && isVoiceOn { sounds.speak(phrase) }
-    }
-
     // MARK: - Hints
 
     /// Each tap shows more of the route; after the full route, the hint turns off.
@@ -285,11 +263,13 @@ final class MazeGameSession {
     /// the player moves on from, goes away by itself, so a small hint never has to be stepped
     /// through the bigger ones to get rid of it.
     static let hintDuration: Duration = .seconds(5)
+    /// How long this session's hints stay; tests shorten it.
+    @ObservationIgnored var hintLifetime: Duration = MazeGameSession.hintDuration
 
     private func scheduleHintFade() {
         hintFade?.cancel()
         hintFade = Task { [weak self] in
-            try? await Task.sleep(for: Self.hintDuration)
+            try? await Task.sleep(for: self?.hintLifetime ?? Self.hintDuration)
             guard !Task.isCancelled else { return }
             self?.hintLevel = nil
         }
@@ -401,11 +381,10 @@ final class MazeGameSession {
         )
     }
 
-    /// A step sound when the path grew, a softer one when it shrank, and the fanfare at the finish.
+    /// A step sound when the path grew, a softer one when it shrank, and the fanfare and applause at the finish.
     private func playPathSound(from previousLength: Int) {
         if isComplete {
             play(.finish)
-            speak(.cheer(Int(seed % UInt64(SpokenPhrase.cheers.count))))
         } else if path.cells.count > previousLength {
             play(.step(path.cells.count - 1))
         } else if path.cells.count < previousLength {

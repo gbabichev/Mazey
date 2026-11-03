@@ -5,8 +5,8 @@
 
 import AVFoundation
 
-/// Plays the synthesized sound effects through AVAudioEngine, with a haptic for each, and
-/// speaks short phrases.
+/// Plays the synthesized sound effects through AVAudioEngine, with a haptic for each, and a
+/// recording of applause at the finish.
 ///
 /// On iOS the audio session is "ambient": sounds follow the silent switch and mix with
 /// music or podcasts a parent may have playing, instead of cutting them off.
@@ -19,10 +19,10 @@ final class SoundEngine: SoundPlaying {
     private var players: [AVAudioPlayerNode] = []
     private var nextPlayer = 0
     private var buffers: [SoundEffect: AVAudioPCMBuffer] = [:]
+    private var applause: AVAudioPCMBuffer?
     private var melodyStart = 0
     private var lastStepTime: ContinuousClock.Instant?
     private let haptics = Haptics()
-    private let speech = Speech()
 
     /// Step sounds closer together than this are skipped, so a fast drag stays musical.
     private let minimumStepGap: Duration = .milliseconds(45)
@@ -40,14 +40,6 @@ final class SoundEngine: SoundPlaying {
         activateSession()
     }
 
-    func speak(_ phrase: SpokenPhrase) {
-        speech.speak(phrase)
-    }
-
-    func stopSpeaking() {
-        speech.stop()
-    }
-
     func startMelody(at position: Int) {
         melodyStart = position
     }
@@ -61,9 +53,33 @@ final class SoundEngine: SoundPlaying {
         nextPlayer = (nextPlayer + 1) % players.count
         player.scheduleBuffer(buffer(for: effect), at: nil, options: .interrupts, completionHandler: nil)
         player.play()
+        if effect == .finish { playApplause() }
     }
 
     // MARK: - Private
+
+    /// The bundled applause (see Sounds/CREDITS.md), on the next player along.
+    private func playApplause() {
+        if applause == nil { applause = Self.loadApplause(matching: format) }
+        guard let applause else { return }
+        let player = players[nextPlayer]
+        nextPlayer = (nextPlayer + 1) % players.count
+        player.scheduleBuffer(applause, at: nil, options: .interrupts, completionHandler: nil)
+        player.play()
+    }
+
+    /// Reads the applause file into memory. It is encoded in the engine's own format
+    /// (mono, 44.1 kHz), so it needs no conversion; if it is missing the fanfare plays alone.
+    private static func loadApplause(matching format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard let url = Bundle.main.url(forResource: "Applause", withExtension: "m4a"),
+              let file = try? AVAudioFile(forReading: url),
+              file.processingFormat.sampleRate == format.sampleRate,
+              file.processingFormat.channelCount == format.channelCount,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))
+        else { return nil }
+        try? file.read(into: buffer)
+        return buffer
+    }
 
     /// A step's length becomes a place in the song: the first step is the first note.
     private func inMelody(_ effect: SoundEffect) -> SoundEffect {

@@ -30,8 +30,6 @@ nonisolated enum SoundEffect: Hashable, Sendable {
 protocol SoundPlaying: AnyObject {
     /// Plays a sound effect, with the haptic that goes with it.
     func play(_ effect: SoundEffect)
-    func speak(_ phrase: SpokenPhrase)
-    func stopSpeaking()
     /// Sets where in the song a maze's first step begins.
     func startMelody(at position: Int)
 }
@@ -44,6 +42,4 @@ extension SoundPlaying {
 @MainActor
 final class SilentSounds: SoundPlaying {
     func play(_ effect: SoundEffect) {}
-    func speak(_ phrase: SpokenPhrase) {}
-    func stopSpeaking() {}
 }
