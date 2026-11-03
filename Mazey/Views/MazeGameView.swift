@@ -41,6 +41,21 @@ struct MazeGameView: View {
             ThemeBackdrop(theme: session.theme, seed: session.maze.seed)
                 .ignoresSafeArea()
         }
+        // Over the whole screen, not just the maze: after a rotation the maze can be a narrow
+        // strip, and the card must still have room.
+        .overlay {
+            if session.isComplete {
+                CelebrationView(
+                    theme: session.theme,
+                    reward: session.lastReward,
+                    onChooseFriend: { session.collection.select($0) },
+                    onNext: { withAnimation { session.newMaze() } }
+                )
+                .padding(12)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.5), value: session.isComplete)
         #if os(macOS)
         // Arrow-key play. Skipped on iOS, where a focusable view summons the on-screen keyboard.
         .focusable()
@@ -161,18 +176,6 @@ struct MazeGameView: View {
                         .allowsHitTesting(false)
                     }
                 }
-                .overlay {
-                    if session.isComplete {
-                        CelebrationView(
-                            theme: session.theme,
-                            reward: session.lastReward,
-                            onChooseFriend: { session.collection.select($0) },
-                            onNext: { withAnimation { session.newMaze() } }
-                        )
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .animation(.spring(duration: 0.5), value: session.isComplete)
                 .offset(x: frame.minX, y: frame.minY)
             }
         }

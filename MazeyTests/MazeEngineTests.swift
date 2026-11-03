@@ -903,6 +903,24 @@ struct MazeEngineTests {
         #expect(afterReset.isDragMusicOn && afterReset.isApplauseOn)
     }
 
+    @Test func theIntroShowsOnFirstLaunchAndOnlyOnce() {
+        let defaults = isolatedDefaults()
+        let first = MazeGameSession(difficulty: .easy, seed: 4, defaults: defaults)
+        #expect(!first.hasSeenIntro)
+        first.finishIntro()
+        #expect(first.hasSeenIntro)
+        #expect(MazeGameSession(difficulty: .easy, seed: 4, defaults: defaults).hasSeenIntro)
+    }
+
+    @Test func resettingBringsTheIntroBack() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 4, defaults: defaults)
+        session.finishIntro()
+        session.resetEverything()
+        #expect(!session.hasSeenIntro)
+        #expect(!MazeGameSession(difficulty: .easy, seed: 4, defaults: defaults).hasSeenIntro)
+    }
+
     @Test func everySoundHasAHapticAndStepsGrowStronger() {
         for effect in allEffects {
             switch HapticKind.kind(for: effect) {

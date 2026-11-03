@@ -58,6 +58,15 @@ final class MazeGameSession {
         didSet { defaults.set(isApplauseOn, forKey: Self.applauseKey) }
     }
 
+    /// Whether the first-launch intro has been seen (or skipped). It shows once, then only from Settings.
+    private(set) var hasSeenIntro: Bool
+
+    /// Closes the intro and remembers that it was seen.
+    func finishIntro() {
+        hasSeenIntro = true
+        defaults.set(true, forKey: Self.introSeenKey)
+    }
+
     /// True while the finger demo is on screen. It shows on the very first launch and again
     /// as a nudge when a new player leaves a maze untouched for a while.
     private(set) var isDemoVisible: Bool
@@ -69,6 +78,7 @@ final class MazeGameSession {
     static let applauseKey = "applauseEnabled"
     static let difficultyKey = "difficulty"
     static let demoSeenKey = "demoSeen"
+    static let introSeenKey = "introSeen"
     static let completedKey = "completedMazes"
     /// The idle nudge stops once a child has finished this many mazes: they know what to do.
     static let nudgeUntilCompleted = 3
@@ -101,6 +111,7 @@ final class MazeGameSession {
         self.isDragMusicOn = defaults.object(forKey: Self.dragMusicKey) as? Bool ?? true
         self.isApplauseOn = defaults.object(forKey: Self.applauseKey) as? Bool ?? true
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
+        self.hasSeenIntro = defaults.bool(forKey: Self.introSeenKey)
         self.completedMazes = defaults.integer(forKey: Self.completedKey)
         self.difficulty = difficulty
         self.theme = MazeTheme.theme(for: seed)
@@ -211,7 +222,7 @@ final class MazeGameSession {
     /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
     func resetEverything() {
         collection.reset()
-        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
+        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.difficultyKey, Self.demoSeenKey, Self.introSeenKey, Self.completedKey] {
             defaults.removeObject(forKey: key)
         }
         completedMazes = 0
@@ -219,6 +230,7 @@ final class MazeGameSession {
         isSoundOn = true
         isDragMusicOn = true
         isApplauseOn = true
+        hasSeenIntro = false
         newMaze(difficulty: .beginner)
         defaults.removeObject(forKey: Self.difficultyKey)
         isDemoVisible = true

@@ -17,11 +17,14 @@ struct CelebrationView: View {
     @State private var chosenFriend: Friend?
 
     var body: some View {
-        // Tall spaces stack everything; short ones (a phone on its side) put the sticker beside the words.
-        ViewThatFits(in: .vertical) {
+        // Tall spaces stack everything; short ones (a phone on its side) put the sticker beside the
+        // words; and when even that is too tall, it scrolls rather than squeezing the text.
+        ViewThatFits {
             stacked
-            sideBySide
+            sideBySide(scrolls: false)
+            sideBySide(scrolls: true)
         }
+        .frame(maxWidth: 560)
         .padding(26)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
         .shadow(radius: 12)
@@ -41,11 +44,15 @@ struct CelebrationView: View {
                 StarProgress(collected: reward.starsCollected, total: reward.starsTotal)
                     .font(.title3)
             }
-            words
+            headline
+            details
+            nextButton
         }
     }
 
-    private var sideBySide: some View {
+    /// The sticker on one side and the words on the other. When there is too little height even
+    /// for that, the labels scroll but the Next Maze button stays put, so it is always reachable.
+    private func sideBySide(scrolls: Bool) -> some View {
         HStack(spacing: 22) {
             if let reward {
                 VStack(spacing: 8) {
@@ -56,21 +63,42 @@ struct CelebrationView: View {
                         .font(.title3)
                 }
             }
-            VStack(spacing: 10) { words }
+            VStack(spacing: 10) {
+                if scrolls {
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            headline
+                            details
+                        }
+                        .padding(.bottom, 10)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                } else {
+                    headline
+                    details
+                }
+                nextButton
+            }
         }
     }
 
-    /// The headline, the short labels and the way on.
-    @ViewBuilder
-    private var words: some View {
+    private var headline: some View {
         Text("You did it!")
             .font(.system(size: 34, weight: .heavy, design: .rounded))
             .foregroundStyle(theme.headlineColor)
+    }
+
+    /// The short labels: what was earned and how far the next friend is.
+    @ViewBuilder
+    private var details: some View {
         if let reward {
             badges(reward)
             ForEach(reward.newFriends) { friend in friendOffer(friend) }
             nextFriendHint(reward)
         }
+    }
+
+    private var nextButton: some View {
         Button(action: onNext) {
             Label("Next Maze", systemImage: "arrow.right.circle.fill")
                 .font(.title2.weight(.bold))
@@ -107,22 +135,32 @@ struct CelebrationView: View {
 
     /// A friend unlocked by this maze, with a button to start playing as them.
     private func friendOffer(_ friend: Friend) -> some View {
-        VStack(spacing: 6) {
-            Text("\(friend.emoji) New friend: \(friend.name)!")
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundStyle(theme.isDark ? .white : theme.ink)
-            if chosenFriend == friend {
-                Label("Playing as \(friend.name)", systemImage: "checkmark.circle.fill")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(theme.isDark ? .white : theme.ink)
-            } else {
-                Button("Play as \(friend.emoji)") {
-                    chosenFriend = friend
-                    onChooseFriend(friend)
-                }
-                .buttonStyle(.bordered)
-                .tint(theme.accent)
+        let title = Text("\(friend.emoji) New friend: \(friend.name)!")
+            .font(.system(size: 20, weight: .heavy, design: .rounded))
+            .foregroundStyle(theme.headlineColor)
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { title; friendButton(friend) }
+            VStack(spacing: 6) { title; friendButton(friend) }
+        }
+    }
+
+    @ViewBuilder
+    private func friendButton(_ friend: Friend) -> some View {
+        if chosenFriend == friend {
+            Label("Playing as \(friend.name)", systemImage: "checkmark.circle.fill")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(theme.headlineColor)
+        } else {
+            Button {
+                chosenFriend = friend
+                onChooseFriend(friend)
+            } label: {
+                Text("Play as \(friend.emoji)")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.headlineColor)
             }
+            .buttonStyle(.bordered)
+            .tint(theme.accent)
         }
     }
 

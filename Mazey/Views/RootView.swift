@@ -19,6 +19,17 @@ struct RootView: View {
     @State private var path: [AppRoute] = []
 
     var body: some View {
+        ZStack {
+            navigation
+            if !session.hasSeenIntro {
+                IntroView(theme: session.theme) { withAnimation { session.finishIntro() } }
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+    }
+
+    private var navigation: some View {
         NavigationStack(path: $path) {
             HomeView(
                 session: session,

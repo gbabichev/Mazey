@@ -11,8 +11,20 @@ struct SettingsView: View {
     @Bindable var session: MazeGameSession
     @Environment(\.dismiss) private var dismiss
     @State private var showsStatistics = false
+    @State private var showsIntro = false
 
     var body: some View {
+        content
+            .sheet(isPresented: $showsIntro) {
+                IntroView(theme: session.theme) { showsIntro = false }
+                    #if os(macOS)
+                    .frame(width: 520, height: 620)
+                    #endif
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         #if os(iOS)
         NavigationStack {
             Form { switches }
@@ -65,6 +77,16 @@ struct SettingsView: View {
             .disabled(!session.isSoundOn)
         } footer: {
             Text(session.isSoundOn ? "Sounds and vibration while you play." : "Turn on sound to choose what plays.")
+        }
+
+        Section {
+            Button {
+                showsIntro = true
+            } label: {
+                Label("How to play", systemImage: "questionmark.circle.fill")
+            }
+        } footer: {
+            Text("A quick tour of stars, stickers and friends.")
         }
 
         Section {
