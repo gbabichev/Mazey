@@ -9,9 +9,12 @@ import SwiftUI
 struct CelebrationView: View {
     let theme: MazeTheme
     let reward: FinishReward?
+    /// Plays as a friend this maze just unlocked.
+    let onChooseFriend: (Friend) -> Void
     let onNext: () -> Void
 
     @State private var popped = false
+    @State private var chosenFriend: Friend?
 
     var body: some View {
         // Tall spaces stack everything; short ones (a phone on its side) put the sticker beside the words.
@@ -65,6 +68,8 @@ struct CelebrationView: View {
             .foregroundStyle(theme.headlineColor)
         if let reward {
             badges(reward)
+            ForEach(reward.newFriends) { friend in friendOffer(friend) }
+            nextFriendHint(reward)
         }
         Button(action: onNext) {
             Label("Next Maze", systemImage: "arrow.right.circle.fill")
@@ -76,33 +81,58 @@ struct CelebrationView: View {
         .tint(theme.accent)
     }
 
-    /// The new sticker, popping in. Gold stickers get a golden glow.
+    /// The new sticker, popping in.
     private func stickerView(_ reward: FinishReward) -> some View {
         ZStack {
-            if reward.isGold {
-                Circle()
-                    .fill(RadialGradient(colors: [Color(red: 1, green: 0.88, blue: 0.3).opacity(0.9), .clear], center: .center, startRadius: 5, endRadius: 70))
-                    .frame(width: 140, height: 140)
-            }
             Text(reward.sticker.emoji)
                 .font(.system(size: 76))
-                .shadow(color: reward.isGold ? Color(red: 1, green: 0.8, blue: 0.1) : .black.opacity(0.2), radius: reward.isGold ? 10 : 4)
+                .shadow(color: .black.opacity(0.2), radius: 4)
         }
         .scaleEffect(popped ? 1 : 0.1)
         .rotationEffect(.degrees(popped ? 0 : -25))
-        .accessibilityLabel(reward.isGold ? "Gold sticker: \(reward.sticker.name)" : "Sticker: \(reward.sticker.name)")
+        .accessibilityLabel("Sticker: \(reward.sticker.name)")
     }
 
     /// Short labels; the pictures do most of the talking.
     @ViewBuilder
     private func badges(_ reward: FinishReward) -> some View {
         HStack(spacing: 8) {
-            if reward.isNew { badge("New sticker!", symbol: "sparkles", color: theme.accent) }
+            if reward.isNew { badge("New in your sticker book!", symbol: "book.pages.fill", color: theme.accent) }
             else { badge("Got it again!", symbol: "arrow.2.circlepath", color: theme.accent) }
-            if reward.isGold { badge("Gold!", symbol: "star.fill", color: Color(red: 0.85, green: 0.62, blue: 0.0)) }
         }
         if reward.isPersonalBest {
             badge("Faster than ever!", symbol: "hare.fill", color: Color(red: 0.2, green: 0.6, blue: 0.35))
+        }
+    }
+
+    /// A friend unlocked by this maze, with a button to start playing as them.
+    private func friendOffer(_ friend: Friend) -> some View {
+        VStack(spacing: 6) {
+            Text("\(friend.emoji) New friend: \(friend.name)!")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .foregroundStyle(theme.isDark ? .white : theme.ink)
+            if chosenFriend == friend {
+                Label("Playing as \(friend.name)", systemImage: "checkmark.circle.fill")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(theme.isDark ? .white : theme.ink)
+            } else {
+                Button("Play as \(friend.emoji)") {
+                    chosenFriend = friend
+                    onChooseFriend(friend)
+                }
+                .buttonStyle(.bordered)
+                .tint(theme.accent)
+            }
+        }
+    }
+
+    /// How far the next friend is, once there is no new one to show.
+    @ViewBuilder
+    private func nextFriendHint(_ reward: FinishReward) -> some View {
+        if reward.newFriends.isEmpty, let next = Friend.next(after: reward.totalStars) {
+            Label("\(next.starsNeeded - reward.totalStars) more for a new friend", systemImage: "star.fill")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(theme.isDark ? .white.opacity(0.85) : theme.ink.opacity(0.8))
         }
     }
 

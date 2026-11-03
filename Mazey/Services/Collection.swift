@@ -8,10 +8,9 @@ import Observation
 
 // MARK: - Saved data
 
-/// One sticker in the book: how many times it has been earned, and whether any was a gold one.
+/// One sticker in the book: how many times it has been earned.
 nonisolated struct StickerEntry: Codable, Equatable, Sendable {
     var count: Int
-    var gold: Bool
     var firstEarned: Date
 }
 
@@ -37,6 +36,21 @@ nonisolated struct Progress: Codable, Equatable, Sendable {
     /// Keyed by "themeID/index".
     var stickers: [String: StickerEntry] = [:]
     var finishes: [FinishRecord] = []
+    /// Every star ever collected. Kept apart from `finishes`, which drops its oldest records.
+    var lifetimeStars = 0
+    /// The friend playing in place of each world's character; nil is the world's own.
+    var friendID: String?
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        stickers = try container.decodeIfPresent([String: StickerEntry].self, forKey: .stickers) ?? [:]
+        finishes = try container.decodeIfPresent([FinishRecord].self, forKey: .finishes) ?? []
+        lifetimeStars = try container.decodeIfPresent(Int.self, forKey: .lifetimeStars)
+            ?? finishes.reduce(0) { $0 + $1.starsCollected }
+        friendID = try container.decodeIfPresent(String.self, forKey: .friendID)
+    }
 
     static func key(themeID: String, index: Int) -> String { "\(themeID)/\(index)" }
 }
@@ -45,21 +59,14 @@ nonisolated struct Progress: Codable, Equatable, Sendable {
 
 nonisolated enum StickerAwarder {
     /// Which of a theme's stickers a finished maze earns: one the player does not have yet if
-    /// there is any, so the book keeps filling; after that, a gold run upgrades a sticker that is
-    /// not gold yet; otherwise any of them again. `seed` makes the pick repeatable.
-    static func choose(themeID: String, stickerCount: Int, in progress: Progress, wantsGold: Bool, seed: UInt64) -> Int {
+    /// there is any, so the book keeps filling; otherwise any of them again. `seed` makes the
+    /// pick repeatable.
+    static func choose(themeID: String, stickerCount: Int, in progress: Progress, seed: UInt64) -> Int {
         guard stickerCount > 0 else { return 0 }
         let all = Array(0..<stickerCount)
         let entries = all.map { progress.stickers[Progress.key(themeID: themeID, index: $0)] }
         let unowned = all.filter { entries[$0] == nil }
-        let pool: [Int]
-        if !unowned.isEmpty {
-            pool = unowned
-        } else if wantsGold, case let notGold = all.filter({ entries[$0]?.gold == false }), !notGold.isEmpty {
-            pool = notGold
-        } else {
-            pool = all
-        }
+        let pool = unowned.isEmpty ? all : unowned
         return pool[Int(seed % UInt64(pool.count))]
     }
 }
@@ -71,10 +78,12 @@ nonisolated struct FinishReward: Equatable, Sendable {
     var sticker: Sticker
     /// The sticker was not in the book before.
     var isNew: Bool
-    /// This sticker is gold: every star was collected.
-    var isGold: Bool
     var starsCollected: Int
     var starsTotal: Int
+    /// All the stars collected so far, this maze's included.
+    var totalStars: Int
+    /// Friends this maze unlocked.
+    var newFriends: [Friend]
     /// The fastest maze so far at this difficulty (only announced after a few tries).
     var isPersonalBest: Bool
 }
@@ -180,16 +189,18 @@ final class CollectionStore {
         seed: UInt64,
         now: Date = Date()
     ) -> FinishReward {
-        let wantsGold = starsTotal > 0 && starsCollected >= starsTotal
         let index = StickerAwarder.choose(
-            themeID: theme.id, stickerCount: theme.stickers.count, in: progress, wantsGold: wantsGold, seed: seed
+            themeID: theme.id, stickerCount: theme.stickers.count, in: progress, seed: seed
         )
         let key = Progress.key(themeID: theme.id, index: index)
         let isNew = progress.stickers[key] == nil
-        var entry = progress.stickers[key] ?? StickerEntry(count: 0, gold: false, firstEarned: now)
+        var entry = progress.stickers[key] ?? StickerEntry(count: 0, firstEarned: now)
         entry.count += 1
-        entry.gold = entry.gold || wantsGold
         progress.stickers[key] = entry
+
+        let starsBefore = progress.lifetimeStars
+        progress.lifetimeStars += starsCollected
+        let newFriends = Friend.all.filter { $0.starsNeeded > starsBefore && $0.starsNeeded <= progress.lifetimeStars }
 
         let earlier = progress.finishes.filter { $0.difficulty == difficulty }
         let isBest = earlier.count >= Self.bestNeedsHistory && earlier.allSatisfy { seconds < $0.seconds }
@@ -205,7 +216,8 @@ final class CollectionStore {
 
         return FinishReward(
             themeID: theme.id, stickerIndex: index, sticker: theme.stickers[index], isNew: isNew,
-            isGold: wantsGold, starsCollected: starsCollected, starsTotal: starsTotal, isPersonalBest: isBest
+            starsCollected: starsCollected, starsTotal: starsTotal, totalStars: progress.lifetimeStars,
+            newFriends: newFriends, isPersonalBest: isBest
         )
     }
 
@@ -219,6 +231,26 @@ final class CollectionStore {
         if let data = try? JSONEncoder().encode(progress) {
             defaults.set(data, forKey: Self.key)
         }
+    }
+
+    // MARK: Friends
+
+    /// All the stars collected, ever.
+    var totalStars: Int { progress.lifetimeStars }
+
+    var unlockedFriends: [Friend] { Friend.unlocked(by: totalStars) }
+
+    /// The friend chosen to play as, or nil for each world's own character.
+    var selectedFriend: Friend? {
+        guard let friend = Friend.friend(id: progress.friendID), friend.isUnlocked(by: totalStars) else { return nil }
+        return friend
+    }
+
+    /// Plays as `friend` (nil for the world's own). A friend not unlocked yet is ignored.
+    func select(_ friend: Friend?) {
+        if let friend, !friend.isUnlocked(by: totalStars) { return }
+        progress.friendID = friend?.id
+        save()
     }
 
     // MARK: Reading

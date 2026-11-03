@@ -81,9 +81,10 @@ struct StatisticsView: View {
     private var overall: some View {
         Section("Overall") {
             LabeledContent("Mazes finished", value: "\(statistics.totalFinished)")
-            LabeledContent("Stars collected", value: "\(statistics.totalStars)")
-            LabeledContent("Perfect mazes (all stars)", value: "\(statistics.perfectMazes)")
+            LabeledContent("Stars collected", value: "\(collection.totalStars)")
+            LabeledContent("Mazes with every star", value: "\(statistics.perfectMazes)")
             LabeledContent("Stickers in the book", value: "\(collection.ownedStickerCount) of \(CollectionStore.totalStickerCount)")
+            LabeledContent("Friends unlocked", value: "\(collection.unlockedFriends.count) of \(Friend.all.count)")
             LabeledContent("Days played", value: "\(statistics.daysPlayed)")
             LabeledContent("Days in a row", value: "\(statistics.currentStreak())")
         }

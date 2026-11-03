@@ -13,6 +13,8 @@ struct MazeCanvas: View {
     let hint: [GridPoint]
     let hintLevel: MazeHintLevel?
     let theme: MazeTheme
+    /// The character that is dragged along the route.
+    let playerEmoji: String
     /// False while the demo is showing: it draws the moving character itself.
     var showsPlayer = true
     /// Where the player is between cells while a pointer is down, so it glides instead of snapping.
@@ -26,6 +28,7 @@ struct MazeCanvas: View {
         let hint = hint
         let hintLevel = hintLevel
         let theme = theme
+        let playerEmoji = playerEmoji
         let showsPlayer = showsPlayer
         let head = head
         let stars = stars
@@ -61,7 +64,7 @@ struct MazeCanvas: View {
             }
             if showsPlayer, let end = route.last {
                 let position = head.map { layout.screenPoint(forUnit: $0.point) } ?? layout.center(of: end)
-                Self.drawEmoji(&context, theme.playerEmoji, at: position, size: layout.glyphSize * 0.62)
+                Self.drawEmoji(&context, playerEmoji, at: position, size: layout.glyphSize * 0.62)
             }
         }
         .accessibilityLabel("Maze")

@@ -129,6 +129,7 @@ struct MazeGameView: View {
                     hint: session.hintCells,
                     hintLevel: session.hintLevel,
                     theme: session.theme,
+                    playerEmoji: session.playerEmoji,
                     showsPlayer: !session.isDemoVisible,
                     head: session.head,
                     stars: session.uncollectedStars
@@ -153,7 +154,7 @@ struct MazeGameView: View {
                         DemoFinger(
                             points: layout.polyline(for: session.demoRoute),
                             cellSize: layout.glyphSize,
-                            playerEmoji: session.theme.playerEmoji,
+                            playerEmoji: session.playerEmoji,
                             trailColor: session.theme.path,
                             ringColor: session.theme.hint
                         )
@@ -162,9 +163,12 @@ struct MazeGameView: View {
                 }
                 .overlay {
                     if session.isComplete {
-                        CelebrationView(theme: session.theme, reward: session.lastReward) {
-                            withAnimation { session.newMaze() }
-                        }
+                        CelebrationView(
+                            theme: session.theme,
+                            reward: session.lastReward,
+                            onChooseFriend: { session.collection.select($0) },
+                            onNext: { withAnimation { session.newMaze() } }
+                        )
                         .transition(.scale.combined(with: .opacity))
                     }
                 }

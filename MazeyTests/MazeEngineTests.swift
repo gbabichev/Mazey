@@ -879,24 +879,20 @@ struct MazeEngineTests {
         var progress = Progress()
         var earned: Set<Int> = []
         for seed in 0..<8 as Range<UInt64> {
-            let index = StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: false, seed: seed)
+            let index = StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, seed: seed)
             #expect(!earned.contains(index), "gave a duplicate while some were missing")
             earned.insert(index)
-            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, gold: false, firstEarned: Date())
+            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, firstEarned: Date())
         }
         #expect(earned.count == 8)
     }
 
-    @Test func awarderUpgradesPlainStickersOnAGoldRunOnceTheBookIsFull() {
+    @Test func awarderRepeatsAnyStickerOnceTheBookIsFull() {
         var progress = Progress()
         for index in 0..<8 {
-            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, gold: index != 5, firstEarned: Date())
+            progress.stickers[Progress.key(themeID: "space", index: index)] = StickerEntry(count: 1, firstEarned: Date())
         }
-        for seed in 0..<20 as Range<UInt64> {
-            #expect(StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: true, seed: seed) == 5)
-        }
-        // Without a gold run, any sticker may come again.
-        let picks = Set((0..<40 as Range<UInt64>).map { StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, wantsGold: false, seed: $0) })
+        let picks = Set((0..<40 as Range<UInt64>).map { StickerAwarder.choose(themeID: "space", stickerCount: 8, in: progress, seed: $0) })
         #expect(picks.count > 1)
     }
 
@@ -956,7 +952,7 @@ struct MazeEngineTests {
         }
     }
 
-    @Test func aGoldRunIsPossibleInEveryMaze() throws {
+    @Test func everyStarCanBeCollectedInEveryMaze() throws {
         for difficulty in MazeDifficulty.allCases {
             for seed in 0..<40 as Range<UInt64> {
                 let session = MazeGameSession(difficulty: difficulty, seed: seed, defaults: isolatedDefaults())
@@ -966,7 +962,7 @@ struct MazeEngineTests {
                 #expect(!session.isComplete, "\(difficulty) seed \(seed) ended before every star was collected")
                 #expect(session.uncollectedStars.isEmpty, "\(difficulty) seed \(seed) left stars behind")
                 walk(session, to: session.maze.finish)
-                #expect(session.lastReward?.isGold == true)
+                #expect(session.lastReward.map { $0.starsCollected == $0.starsTotal } == true)
             }
         }
     }
@@ -1061,23 +1057,84 @@ struct MazeEngineTests {
         #expect(relaunched.difficulty == .beginner && relaunched.isDemoVisible)
     }
 
-    @Test func finishingAwardsAStickerAndGoldNeedsEveryStar() {
+    @Test func finishingAwardsAStickerAndAddsUpTheStars() {
         let store = CollectionStore(defaults: isolatedDefaults())
-        let plain = record(store, stars: 2, of: 4)
-        #expect(plain.isNew && !plain.isGold)
-        #expect(plain.sticker == MazeTheme.space.stickers[plain.stickerIndex])
-        #expect(store.entry(themeID: "space", index: plain.stickerIndex)?.gold == false)
+        let first = record(store, stars: 2, of: 4)
+        #expect(first.isNew)
+        #expect(first.sticker == MazeTheme.space.stickers[first.stickerIndex])
+        #expect(first.totalStars == 2)
 
-        let gold = record(store, stars: 4, of: 4, seed: 1)
-        #expect(gold.isGold)
-        #expect(store.entry(themeID: "space", index: gold.stickerIndex)?.gold == true)
+        let second = record(store, stars: 4, of: 4, seed: 1)
+        #expect(second.totalStars == 6 && store.totalStars == 6)
         #expect(store.ownedStickerCount == 2)
         #expect(store.progress.finishes.count == 2)
     }
 
-    @Test func aMazeWithNoStarsCannotBeGold() {
+    @Test func friendsUnlockAsStarsAddUp() {
         let store = CollectionStore(defaults: isolatedDefaults())
-        #expect(!record(store, stars: 0, of: 0).isGold)
+        let first = Friend.all[0], second = Friend.all[1]
+        #expect(store.unlockedFriends.isEmpty)
+        let early = record(store, stars: first.starsNeeded - 1, of: 10)
+        #expect(early.newFriends.isEmpty)
+        let reached = record(store, stars: 1, of: 10, seed: 1)
+        #expect(reached.newFriends == [first])
+        // A big haul can unlock several at once, and each is announced only once.
+        let big = record(store, stars: second.starsNeeded - first.starsNeeded + 20, of: 40, seed: 2)
+        #expect(big.newFriends.first == second && big.newFriends.count >= 2)
+        #expect(record(store, stars: 0, of: 4, seed: 3).newFriends.isEmpty)
+    }
+
+    @Test func theFriendListIsOrderedAndSized() {
+        #expect((10...20).contains(Friend.all.count))
+        #expect(Set(Friend.all.map(\.id)).count == Friend.all.count)
+        #expect(Friend.all.map(\.starsNeeded) == Friend.all.map(\.starsNeeded).sorted())
+        #expect(Friend.all.first!.starsNeeded <= 5, "the first friend comes quickly")
+        #expect(Friend.all.last!.starsNeeded <= 250, "and the last is within reach")
+        #expect(Friend.next(after: 0) == Friend.all.first)
+        #expect(Friend.next(after: Friend.all.last!.starsNeeded) == nil)
+    }
+
+    @Test func aFriendReplacesTheWorldsCharacterOnceChosen() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
+        let friend = Friend.all[0]
+        #expect(session.playerEmoji == session.theme.playerEmoji)
+
+        session.collection.select(friend)
+        #expect(session.collection.selectedFriend == nil, "a locked friend cannot be chosen")
+        _ = record(session.collection, stars: friend.starsNeeded, of: 10)
+        session.collection.select(friend)
+        #expect(session.playerEmoji == friend.emoji)
+
+        // It is remembered, and going back to the default works.
+        #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).playerEmoji == friend.emoji)
+        session.collection.select(nil)
+        #expect(session.playerEmoji == session.theme.playerEmoji)
+    }
+
+    @Test func resettingForgetsStarsAndTheChosenFriend() {
+        let store = CollectionStore(defaults: isolatedDefaults())
+        _ = record(store, stars: 30, of: 30)
+        store.select(Friend.all[0])
+        store.reset()
+        #expect(store.totalStars == 0 && store.selectedFriend == nil)
+    }
+
+    @Test func oldSavedProgressStillLoadsAndKeepsItsStars() throws {
+        let defaults = isolatedDefaults()
+        let store = CollectionStore(defaults: defaults)
+        _ = record(store, stars: 3, of: 4)
+        // Saved before stars were counted separately, and with the old "gold" flag on stickers.
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(store.progress)) as? [String: Any])
+        json["lifetimeStars"] = nil
+        json["friendID"] = nil
+        var stickers = try #require(json["stickers"] as? [String: [String: Any]])
+        for key in stickers.keys { stickers[key]?["gold"] = true }
+        json["stickers"] = stickers
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: CollectionStore.key)
+        let reloaded = CollectionStore(defaults: defaults)
+        #expect(reloaded.totalStars == 3)
+        #expect(reloaded.ownedStickerCount == 1)
     }
 
     @Test func theBookFillsUpThenRepeatsAreCounted() {
@@ -1209,7 +1266,7 @@ struct MazeEngineTests {
         #expect(session.stars != before)
     }
 
-    @Test func aFullGoldRunEarnsAGoldSticker() throws {
+    @Test func aFullRunCollectsEveryStarAndAddsThemUp() throws {
         // Find a maze where every star can be picked up before the finish is crossed.
         for seed in 0..<300 as Range<UInt64> {
             let session = MazeGameSession(difficulty: .easy, seed: seed, defaults: isolatedDefaults())
@@ -1220,12 +1277,11 @@ struct MazeEngineTests {
             walk(session, to: session.maze.finish)
             #expect(session.isComplete)
             let reward = try #require(session.lastReward)
-            #expect(reward.isGold)
             #expect(reward.starsCollected == reward.starsTotal)
-            #expect(session.collection.entry(themeID: reward.themeID, index: reward.stickerIndex)?.gold == true)
+            #expect(session.collection.totalStars == reward.starsTotal)
             return
         }
-        Issue.record("no seed allowed a full gold run")
+        Issue.record("no seed allowed a full run")
     }
 
     @Test func finishingWithoutAllStarsEarnsAPlainStickerAndIsRecorded() throws {
@@ -1701,7 +1757,7 @@ struct MazeEngineTests {
                 }
                 #expect(!session.isComplete && session.uncollectedStars.isEmpty, "\(difficulty) seed \(seed)")
                 if let route = MazeSolver.solve(session.maze, from: session.path.end, to: session.maze.finish) { dragAlong(route, in: session) }
-                #expect(session.lastReward?.isGold == true)
+                #expect(session.lastReward.map { $0.starsCollected == $0.starsTotal } == true)
             }
         }
     }
