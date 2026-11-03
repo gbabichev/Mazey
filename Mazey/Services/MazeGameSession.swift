@@ -300,7 +300,7 @@ final class MazeGameSession {
     /// How long a hint stays up. Each tap asks for more, but a hint that is left alone, or that
     /// the player moves on from, goes away by itself, so a small hint never has to be stepped
     /// through the bigger ones to get rid of it.
-    static let hintDuration: Duration = .seconds(5)
+    static let hintDuration: Duration = .seconds(10)
     /// How long this session's hints stay; tests shorten it.
     @ObservationIgnored var hintLifetime: Duration = MazeGameSession.hintDuration
 
