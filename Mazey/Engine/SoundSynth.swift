@@ -59,6 +59,8 @@ nonisolated enum SoundSynth {
             ]
         case .finish:
             return finishFanfare
+        case .applause:
+            return []   // a recording, played by `SoundEngine`
         case .hint(let level):
             let pitches: [Double]
             switch level {

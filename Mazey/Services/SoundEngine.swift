@@ -45,6 +45,10 @@ final class SoundEngine: SoundPlaying {
     }
 
     func play(_ requested: SoundEffect) {
+        if requested == .applause {
+            playApplause()
+            return
+        }
         let effect = inMelody(requested)
         if !shouldPlay(effect) { return }
         haptics.perform(HapticKind.kind(for: effect))
@@ -53,7 +57,6 @@ final class SoundEngine: SoundPlaying {
         nextPlayer = (nextPlayer + 1) % players.count
         player.scheduleBuffer(buffer(for: effect), at: nil, options: .interrupts, completionHandler: nil)
         player.play()
-        if effect == .finish { playApplause() }
     }
 
     // MARK: - Private
@@ -61,7 +64,7 @@ final class SoundEngine: SoundPlaying {
     /// The bundled applause (see Sounds/CREDITS.md), on the next player along.
     private func playApplause() {
         if applause == nil { applause = Self.loadApplause(matching: format) }
-        guard let applause else { return }
+        guard let applause, startEngineIfNeeded() else { return }
         let player = players[nextPlayer]
         nextPlayer = (nextPlayer + 1) % players.count
         player.scheduleBuffer(applause, at: nil, options: .interrupts, completionHandler: nil)

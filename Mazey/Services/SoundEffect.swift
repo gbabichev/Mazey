@@ -13,6 +13,8 @@ nonisolated enum SoundEffect: Hashable, Sendable {
     /// The path shrank. The number is its new length; the note it had on the way out plays again.
     case retrace(Int)
     case finish
+    /// The recorded clapping after the finish fanfare. Its own effect so it can be switched off alone.
+    case applause
     /// A star was picked up. The number is how many have been collected in this maze,
     /// which sets the pitch so a full set climbs the scale.
     case collect(Int)

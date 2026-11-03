@@ -40,12 +40,22 @@ final class MazeGameSession {
     @ObservationIgnored private var hintFade: Task<Void, Never>?
     @ObservationIgnored private let clock: () -> Date
 
-    /// Whether sound effects play. Remembered between launches.
+    /// The master switch: whether any sound plays. Remembered between launches.
     var isSoundOn: Bool {
         didSet {
             defaults.set(isSoundOn, forKey: Self.soundKey)
             if isSoundOn && !oldValue { sounds.play(.soundOn) }
         }
+    }
+
+    /// Whether the song plays note by note while dragging. Only matters while sound is on.
+    var isDragMusicOn: Bool {
+        didSet { defaults.set(isDragMusicOn, forKey: Self.dragMusicKey) }
+    }
+
+    /// Whether the clapping plays when a maze is finished. Only matters while sound is on.
+    var isApplauseOn: Bool {
+        didSet { defaults.set(isApplauseOn, forKey: Self.applauseKey) }
     }
 
     /// True while the finger demo is on screen. It shows on the very first launch and again
@@ -55,6 +65,8 @@ final class MazeGameSession {
     private(set) var completedMazes: Int
 
     static let soundKey = "soundEnabled"
+    static let dragMusicKey = "dragMusicEnabled"
+    static let applauseKey = "applauseEnabled"
     static let difficultyKey = "difficulty"
     static let demoSeenKey = "demoSeen"
     static let completedKey = "completedMazes"
@@ -86,6 +98,8 @@ final class MazeGameSession {
         self.clock = clock
         self.stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
+        self.isDragMusicOn = defaults.object(forKey: Self.dragMusicKey) as? Bool ?? true
+        self.isApplauseOn = defaults.object(forKey: Self.applauseKey) as? Bool ?? true
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
         self.completedMazes = defaults.integer(forKey: Self.completedKey)
         self.difficulty = difficulty
@@ -197,12 +211,14 @@ final class MazeGameSession {
     /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
     func resetEverything() {
         collection.reset()
-        for key in [Self.soundKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
+        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
             defaults.removeObject(forKey: key)
         }
         completedMazes = 0
         lastReward = nil
         isSoundOn = true
+        isDragMusicOn = true
+        isApplauseOn = true
         newMaze(difficulty: .beginner)
         defaults.removeObject(forKey: Self.difficultyKey)
         isDemoVisible = true
@@ -240,8 +256,15 @@ final class MazeGameSession {
         isDragLive = false
     }
 
+    /// Plays an effect unless sound is off, or the switch for its kind of sound is.
     private func play(_ effect: SoundEffect) {
-        if isSoundOn { sounds.play(effect) }
+        guard isSoundOn else { return }
+        switch effect {
+        case .step, .retrace: guard isDragMusicOn else { return }
+        case .applause: guard isApplauseOn else { return }
+        default: break
+        }
+        sounds.play(effect)
     }
 
     // MARK: - Hints
@@ -388,6 +411,7 @@ final class MazeGameSession {
     private func playPathSound(from previousLength: Int) {
         if isComplete {
             play(.finish)
+            play(.applause)
         } else if path.cells.count > previousLength {
             play(.step(path.cells.count - 1))
         } else if path.cells.count < previousLength {

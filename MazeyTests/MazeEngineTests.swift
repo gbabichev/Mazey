@@ -720,7 +720,8 @@ struct MazeEngineTests {
         }
         #expect(session.isComplete)
         #expect(spy.played.filter { $0 == .finish }.count == 1)
-        #expect(spy.played.last == .finish)
+        #expect(spy.played.filter { $0 == .applause }.count == 1)
+        #expect(Array(spy.played.suffix(2)) == [.finish, .applause], "the clapping follows the fanfare")
         // Once finished, more dragging stays quiet.
         let count = spy.played.count
         session.drag(from: center(row: 0, column: 0), to: center(row: 1, column: 1))
@@ -835,11 +836,79 @@ struct MazeEngineTests {
         #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).completedMazes == 1)
     }
 
+    /// Drags the player along the solution to the finish.
+    private func finishMaze(_ session: MazeGameSession) throws {
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        for (from, to) in zip(route, route.dropFirst()) {
+            session.drag(from: center(row: from.row, column: from.column), to: center(row: to.row, column: to.column))
+        }
+        #expect(session.isComplete)
+    }
+
+    private func isStep(_ effect: SoundEffect) -> Bool {
+        switch effect {
+        case .step, .retrace: true
+        default: false
+        }
+    }
+
+    @Test func everySoundPlaysByDefaultAndTheFinishIncludesApplause() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        #expect(session.isSoundOn && session.isDragMusicOn && session.isApplauseOn)
+        try finishMaze(session)
+        #expect(spy.played.contains { isStep($0) })
+        #expect(spy.played.contains(.finish))
+        #expect(spy.played.contains(.applause))
+    }
+
+    @Test func dragMusicCanBeSwitchedOffAlone() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.isDragMusicOn = false
+        try finishMaze(session)
+        #expect(!spy.played.contains { isStep($0) }, "no notes while dragging")
+        #expect(spy.played.contains(.finish) && spy.played.contains(.applause), "the finish is unchanged")
+    }
+
+    @Test func applauseCanBeSwitchedOffAlone() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.isApplauseOn = false
+        try finishMaze(session)
+        #expect(spy.played.contains { isStep($0) }, "the music still plays")
+        #expect(spy.played.contains(.finish), "and so does the fanfare")
+        #expect(!spy.played.contains(.applause))
+    }
+
+    @Test func theMasterSwitchSilencesEverythingWhateverTheOthersSay() throws {
+        let spy = SoundSpy()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, sounds: spy, defaults: isolatedDefaults())
+        session.isSoundOn = false
+        #expect(session.isDragMusicOn && session.isApplauseOn, "the other switches keep their setting")
+        try finishMaze(session)
+        #expect(spy.played.isEmpty)
+    }
+
+    @Test func soundSwitchesAreRememberedAndResetToOn() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
+        session.isDragMusicOn = false
+        session.isApplauseOn = false
+        let relaunched = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
+        #expect(!relaunched.isDragMusicOn && !relaunched.isApplauseOn && relaunched.isSoundOn)
+        session.resetEverything()
+        #expect(session.isDragMusicOn && session.isApplauseOn)
+        let afterReset = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
+        #expect(afterReset.isDragMusicOn && afterReset.isApplauseOn)
+    }
+
     @Test func everySoundHasAHapticAndStepsGrowStronger() {
         for effect in allEffects {
             switch HapticKind.kind(for: effect) {
             case .tick(let intensity): #expect((0...1).contains(intensity), "\(effect)")
             case .celebrate: #expect(effect == .finish)
+            case .none: #expect(effect == .applause)
             }
         }
         let intensities = (0..<SoundSynth.stepScale.count).map { index -> Double in

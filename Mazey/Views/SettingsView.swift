@@ -50,11 +50,21 @@ struct SettingsView: View {
     private var switches: some View {
         Section {
             Toggle(isOn: $session.isSoundOn) {
-                Label("Sound effects", systemImage: "speaker.wave.2.fill")
+                Label("Sound", systemImage: "speaker.wave.2.fill")
             }
             .toggleStyle(.switch)
+            Toggle(isOn: $session.isDragMusicOn) {
+                Label("Music while dragging", systemImage: "music.note")
+            }
+            .toggleStyle(.switch)
+            .disabled(!session.isSoundOn)
+            Toggle(isOn: $session.isApplauseOn) {
+                Label("Applause at the end", systemImage: "hands.clap.fill")
+            }
+            .toggleStyle(.switch)
+            .disabled(!session.isSoundOn)
         } footer: {
-            Text("Sounds and vibration while you play.")
+            Text(session.isSoundOn ? "Sounds and vibration while you play." : "Turn on sound to choose what plays.")
         }
 
         Section {

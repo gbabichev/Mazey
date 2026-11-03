@@ -17,6 +17,8 @@ nonisolated enum HapticKind: Equatable, Sendable {
     case tick(intensity: Double)
     /// Rising taps ending in a soft rumble, for finishing a maze.
     case celebrate
+    /// No feedback at all.
+    case none
 
     /// The feedback that pairs with a sound effect.
     static func kind(for effect: SoundEffect) -> HapticKind {
@@ -27,6 +29,7 @@ nonisolated enum HapticKind: Equatable, Sendable {
             return .tick(intensity: 0.35 + 0.35 * position)
         case .retrace: return .tick(intensity: 0.25)
         case .finish: return .celebrate
+        case .applause: return .none
         case .collect: return .tick(intensity: 0.55)
         case .hint: return .tick(intensity: 0.5)
         case .newMaze: return .tick(intensity: 0.6)
@@ -59,11 +62,14 @@ final class Haptics {
             impact.prepare()
         case .celebrate:
             celebrate()
+        case .none:
+            break
         }
         #elseif os(macOS)
         switch kind {
         case .tick: NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         case .celebrate: NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        case .none: break
         }
         #endif
     }
