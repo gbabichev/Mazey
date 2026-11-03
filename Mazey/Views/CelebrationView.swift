@@ -133,14 +133,16 @@ struct CelebrationView: View {
         }
     }
 
-    /// A friend unlocked by this maze, with a button to start playing as them.
+    /// A friend unlocked by this maze, with a button to start playing as them. The two always
+    /// stack, so the row is never wider than the card (a wide row would push the whole card
+    /// into the side-by-side layout, even on a portrait phone).
     private func friendOffer(_ friend: Friend) -> some View {
-        let title = Text("\(friend.emoji) New friend: \(friend.name)!")
-            .font(.system(size: 20, weight: .heavy, design: .rounded))
-            .foregroundStyle(theme.headlineColor)
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { title; friendButton(friend) }
-            VStack(spacing: 6) { title; friendButton(friend) }
+        VStack(spacing: 6) {
+            Text("\(friend.emoji) New friend: \(friend.name)!")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .foregroundStyle(theme.headlineColor)
+                .multilineTextAlignment(.center)
+            friendButton(friend)
         }
     }
 
