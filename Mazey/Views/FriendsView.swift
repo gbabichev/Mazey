@@ -122,6 +122,8 @@ private struct FriendCell: View {
                     .layoutPriority(-1)
                     Text(friend.name)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(theme.ink)
                 } else {
                     Text(friend.emoji)

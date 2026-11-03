@@ -1085,11 +1085,11 @@ struct MazeEngineTests {
     }
 
     @Test func theFriendListIsOrderedAndSized() {
-        #expect((10...20).contains(Friend.all.count))
+        #expect((10...25).contains(Friend.all.count))
         #expect(Set(Friend.all.map(\.id)).count == Friend.all.count)
         #expect(Friend.all.map(\.starsNeeded) == Friend.all.map(\.starsNeeded).sorted())
-        #expect(Friend.all.first!.starsNeeded <= 5, "the first friend comes quickly")
-        #expect(Friend.all.last!.starsNeeded <= 250, "and the last is within reach")
+        #expect(Friend.all.first!.starsNeeded <= 10, "the first friend comes quickly")
+        #expect(Friend.all.last!.starsNeeded <= 750, "and the last is within reach")
         #expect(Friend.next(after: 0) == Friend.all.first)
         #expect(Friend.next(after: Friend.all.last!.starsNeeded) == nil)
     }

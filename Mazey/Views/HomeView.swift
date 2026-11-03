@@ -5,8 +5,7 @@
 
 import SwiftUI
 
-/// The first screen: a big Play button, the sticker book with a peek at the newest stickers,
-/// and a few friendly milestones. Wide screens put the title beside the buttons.
+/// The first screen: a big Play button, then the sticker book and friends. Wide screens put the title beside the buttons.
 struct HomeView: View {
     let session: MazeGameSession
     let onPlay: () -> Void
@@ -77,7 +76,7 @@ struct HomeView: View {
         }
     }
 
-    /// Play, then the sticker book and friends, then the milestones. When there is not enough
+    /// Play, then the sticker book and friends. When there is not enough
     /// height (a phone on its side) the sticker book and friends sit side by side.
     private var menu: some View {
         ViewThatFits(in: .vertical) {
@@ -115,78 +114,66 @@ struct HomeView: View {
                     .keepsSceneryClear("friends", in: $clearAreas)
             }
             .frame(maxWidth: sideBySide ? 360 : nil)
-
-            milestones
-                .keepsSceneryClear("milestones", in: $clearAreas)
         }
     }
 
-    /// A peek at the newest stickers, then how full the book is.
+    /// The sticker book: its name, and how full it is.
     private var stickerButtonLabel: some View {
-        let newest = session.collection.newestStickers(4)
-        return HStack(spacing: 10) {
-            if newest.isEmpty {
-                Image(systemName: "book.pages.fill").font(.title)
-            } else {
-                HStack(spacing: -6) {
-                    ForEach(Array(newest.enumerated()), id: \.offset) { _, item in
-                        Text(item.sticker.emoji).font(.system(size: 30))
-                    }
-                }
-            }
-            Text("\(session.collection.ownedStickerCount) / \(CollectionStore.totalStickerCount)")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+        let collection = session.collection
+        return menuButtonLabel(
+            title: "Stickers",
+            detail: ("square.grid.2x2.fill", "\(collection.ownedStickerCount) / \(CollectionStore.totalStickerCount)"),
+            accessibility: "Sticker book, \(collection.ownedStickerCount) of \(CollectionStore.totalStickerCount) stickers"
+        ) {
+            Image(systemName: "book.pages.fill").font(.system(size: 30))
         }
-        .padding(.vertical, 4)
-        .frame(maxWidth: 320)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sticker book, \(session.collection.ownedStickerCount) of \(CollectionStore.totalStickerCount) stickers")
     }
 
-    /// Who is playing now, and how far the next friend is.
+    /// The friends picker: who is playing now, its name, and how far the next friend is.
     private var friendsButtonLabel: some View {
         let collection = session.collection
-        return HStack(spacing: 10) {
-            Text(session.playerEmoji).font(.system(size: 30))
-            if let next = Friend.next(after: collection.totalStars) {
-                Label("\(collection.totalStars) / \(next.starsNeeded)", systemImage: "star.fill")
+        let detail: (symbol: String, text: String)
+        if let next = Friend.next(after: collection.totalStars) {
+            detail = ("star.fill", "\(collection.totalStars) / \(next.starsNeeded)")
+        } else {
+            detail = ("star.fill", "All found!")
+        }
+        return menuButtonLabel(
+            title: "Friends",
+            detail: detail,
+            accessibility: "Friends, \(collection.unlockedFriends.count) of \(Friend.all.count) unlocked"
+        ) {
+            Text(session.playerEmoji).font(.system(size: 34))
+        }
+    }
+
+    /// An icon, a name and a small count, so each button says what it opens.
+    private func menuButtonLabel<Icon: View>(
+        title: String,
+        detail: (symbol: String, text: String),
+        accessibility: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        HStack(spacing: 10) {
+            icon()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            } else {
-                Text("Friends")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                HStack(spacing: 4) {
+                    Image(systemName: detail.symbol)
+                    Text(detail.text)
+                }
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .opacity(0.8)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 4)
         .frame(maxWidth: 320)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Friends, \(collection.unlockedFriends.count) of \(Friend.all.count) unlocked")
-    }
-
-    /// Positive-only numbers: how many mazes, how many stars, how many days in a row.
-    @ViewBuilder
-    private var milestones: some View {
-        let stats = session.collection.statistics
-        if stats.totalFinished > 0 {
-            HStack(spacing: 10) {
-                milestone("flag.checkered", "\(stats.totalFinished)", .green)
-                milestone("star.fill", "\(session.collection.totalStars)", Color(red: 0.95, green: 0.7, blue: 0.0))
-                let streak = stats.currentStreak()
-                if streak > 1 { milestone("flame.fill", "\(streak)", .orange) }
-            }
-        }
-    }
-
-    private func milestone(_ symbol: String, _ value: String, _ color: Color) -> some View {
-        Label(value, systemImage: symbol)
-            .font(.system(size: 18, weight: .bold, design: .rounded))
-            .foregroundStyle(color)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.regularMaterial, in: Capsule())
+        .accessibilityLabel(accessibility)
     }
 }
 
