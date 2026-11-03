@@ -134,9 +134,9 @@ struct MazeCanvas: View {
         if let head { points.append(layout.screenPoint(forUnit: head.point)) }
         guard points.count > 1 else { return }
         context.stroke(
-            smoothPath(through: points),
+            linePath(through: points, in: layout),
             with: .color(theme.path),
-            style: StrokeStyle(lineWidth: layout.glyphSize * 0.36, lineCap: .round, lineJoin: .round)
+            style: StrokeStyle(lineWidth: layout.glyphSize * 0.36, lineCap: .round, lineJoin: lineJoin(in: layout))
         )
     }
 
@@ -149,11 +149,11 @@ struct MazeCanvas: View {
     ) {
         guard hint.count > 1 else { return }
         let width = layout.glyphSize * 0.2
-        let line = smoothPath(through: layout.polyline(for: hint))
+        let line = linePath(through: layout.polyline(for: hint), in: layout)
         let dash = [width * 0.1, width * 1.8]
         // A white halo keeps the dots visible over the player's own route and over any theme colour.
-        context.stroke(line, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: width * 1.5, lineCap: .round, lineJoin: .round, dash: dash))
-        context.stroke(line, with: .color(theme.hint), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: dash))
+        context.stroke(line, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: width * 1.5, lineCap: .round, lineJoin: lineJoin(in: layout), dash: dash))
+        context.stroke(line, with: .color(theme.hint), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: lineJoin(in: layout), dash: dash))
         if level == .small, let next = hint.last {
             let radius = layout.glyphSize * 0.22
             let center = layout.center(of: next)
@@ -480,6 +480,23 @@ struct MazeCanvas: View {
         var layer = context
         layer.opacity = opacity
         layer.draw(layer.resolve(Text(verbatim: emoji).font(.system(size: size))), at: center, anchor: .center)
+    }
+
+    /// How the player's route and hints are drawn: flowing curves in a round maze, whose paths
+    /// bend round the rings anyway, but crisp straight lines with sharp bends in the others, so
+    /// a square maze keeps its 90 degree turns and a hexagon or triangle maze keeps the angles
+    /// of its cells.
+    private nonisolated static func linePath(through points: [CGPoint], in layout: MazeLayout) -> Path {
+        if layout.isCircular { return smoothPath(through: points) }
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        for point in points.dropFirst() { path.addLine(to: point) }
+        return path
+    }
+
+    private nonisolated static func lineJoin(in layout: MazeLayout) -> CGLineJoin {
+        layout.isCircular ? .round : .miter
     }
 
     /// A line through `points` with rounded corners: straight along each segment, curving at the cell centers.
