@@ -12,6 +12,12 @@ struct MazeyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                #if os(macOS)
+                .modifier(MacAboutPresentation())
+                #endif
         }
+        #if os(macOS)
+        .commands { MazeyAboutCommands() }
+        #endif
     }
 }

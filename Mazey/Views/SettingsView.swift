@@ -12,10 +12,19 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsStatistics = false
     @State private var showsIntro = false
+    #if os(iOS)
+    @State private var showsAbout = false
+    #endif
     @State private var confirmsResetAll = false
 
     var body: some View {
         content
+            #if os(iOS)
+            .sheet(isPresented: $showsAbout) {
+                AboutView()
+                    .presentationSizing(.form)
+            }
+            #endif
             .sheet(isPresented: $confirmsResetAll) {
                 ParentGateView(
                     message: "This erases every player and all their stickers, stars, characters and statistics, plus the settings, as if the app was just installed. It cannot be undone."
@@ -40,6 +49,10 @@ struct SettingsView: View {
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("About Mazey", systemImage: "questionmark.circle") { showsAbout = true }
+                            .labelStyle(.iconOnly)
+                    }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }
                     }
@@ -110,7 +123,7 @@ struct SettingsView: View {
             Button {
                 showsIntro = true
             } label: {
-                Label("How to play", systemImage: "questionmark.circle.fill")
+                Label("How to play", systemImage: "hand.point.up.left.fill")
             }
         } footer: {
             Text("A quick tour of stars, stickers and characters.")
