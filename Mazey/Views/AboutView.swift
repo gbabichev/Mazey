@@ -107,7 +107,7 @@ private struct AboutAppHeader: View {
             LiveAppIconView()
             Text("Mazey")
                 .font(.title.weight(.semibold))
-            Text("Maze Adventures: a calm maze game for little hands.")
+            Text("A calm maze game for little hands.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

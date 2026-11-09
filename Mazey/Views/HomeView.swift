@@ -96,12 +96,14 @@ struct HomeView: View {
             .font(.system(size: 76))
             .accessibilityHidden(true)
 
-            Text("Maze Adventures")
-                .font(.system(size: 42, weight: .heavy, design: .rounded))
-                .foregroundStyle(titleColor)
+            Wordmark(color: titleColor)
+            Text("Let's find the way!")
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(titleColor.opacity(0.8))
                 .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.7)
         }
+        .accessibilityElement(children: .combine)
     }
 
     /// Play, then the sticker book and characters. When there is not enough
@@ -206,6 +208,36 @@ struct HomeView: View {
         .frame(maxWidth: 320)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibility)
+    }
+}
+
+/// "Mazey" in big, bouncy letters that hop into place when the screen opens, each sitting a
+/// little higher or lower and leaning a little, like a toy's name.
+private struct Wordmark: View {
+    let color: Color
+    @State private var landed = false
+
+    private static let letters = Array("Mazey")
+    private static let lift: [CGFloat] = [0, -8, 4, -6, 3]
+    private static let lean: [Double] = [-4, 3, -3, 4, -2]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Self.letters.indices, id: \.self) { index in
+                Text(String(Self.letters[index]))
+                    .font(.system(size: 74, weight: .heavy, design: .rounded))
+                    .foregroundStyle(color)
+                    .shadow(color: .black.opacity(0.12), radius: 0, x: 0, y: 3)
+                    .rotationEffect(.degrees(landed ? Self.lean[index] : 0))
+                    .offset(y: landed ? Self.lift[index] : -40)
+                    .opacity(landed ? 1 : 0)
+                    .animation(.spring(duration: 0.6, bounce: 0.55).delay(Double(index) * 0.07), value: landed)
+            }
+        }
+        .minimumScaleFactor(0.6)
+        .lineLimit(1)
+        .accessibilityLabel("Mazey")
+        .onAppear { landed = true }
     }
 }
 
