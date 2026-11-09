@@ -41,6 +41,10 @@ struct MazeGameView: View {
             ThemeBackdrop(theme: session.theme, seed: session.maze.seed)
                 .ignoresSafeArea()
         }
+        // The maze must never shrink to make room for a keyboard. There is nothing to type here, but
+        // after a text field in a sheet (adding a player) iPad can leave its keyboard space behind,
+        // and the maze would be squeezed into the top of the screen.
+        .ignoresSafeArea(.keyboard)
         // Over the whole screen, not just the maze: after a rotation the maze can be a narrow
         // strip, and the card must still have room.
         .overlay {

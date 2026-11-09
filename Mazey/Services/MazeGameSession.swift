@@ -30,8 +30,11 @@ final class MazeGameSession {
 
     /// The character that is dragged to the finish: the chosen character, or the world's own.
     var playerEmoji: String { collection.selectedCharacter?.emoji ?? theme.playerEmoji }
-    /// The sticker book and the history of finished mazes.
-    let collection: CollectionStore
+    /// The sticker book and the history of finished mazes, for the player who is playing.
+    private(set) var collection: CollectionStore
+    /// Who plays on this device. Each player has their own stickers, characters, statistics
+    /// and difficulty.
+    let roster: PlayerRoster
 
     /// While a pointer is down, where the character is between cells (see `MazePath.head`).
     private(set) var head: PathHead?
@@ -94,10 +97,11 @@ final class MazeGameSession {
     static let dragMusicKey = "dragMusicEnabled"
     static let applauseKey = "applauseEnabled"
     static let mazeStylesKey = "mazeStyles"
-    static let difficultyKey = "difficulty"
-    static let demoSeenKey = "demoSeen"
     static let introSeenKey = "introSeen"
-    static let completedKey = "completedMazes"
+    /// Saved for each player, under a key that includes their id (see `PlayerRoster.key`).
+    static let difficultyKey = PlayerData.difficulty
+    static let demoSeenKey = PlayerData.demoSeen
+    static let completedKey = PlayerData.completed
     /// The idle nudge stops once a child has finished this many mazes: they know what to do.
     static let nudgeUntilCompleted = 3
     @ObservationIgnored private let sounds: any SoundPlaying
@@ -115,14 +119,17 @@ final class MazeGameSession {
         collection: CollectionStore? = nil,
         clock: @escaping () -> Date = Date.init
     ) {
+        let roster = PlayerRoster(defaults: defaults)
+        let player = roster.currentID
         // An explicit difficulty wins; otherwise pick up where the player left off.
         let difficulty = difficulty
-            ?? defaults.string(forKey: Self.difficultyKey).flatMap(MazeDifficulty.init(rawValue:))
+            ?? defaults.string(forKey: PlayerRoster.key(Self.difficultyKey, for: player)).flatMap(MazeDifficulty.init(rawValue:))
             ?? .beginner
         let maze = MazeGenerator.generate(difficulty: difficulty, seed: seed)
         self.sounds = sounds
         self.defaults = defaults
-        self.collection = collection ?? CollectionStore(defaults: defaults)
+        self.roster = roster
+        self.collection = collection ?? CollectionStore(defaults: defaults, key: PlayerRoster.key(PlayerData.progress, for: player))
         self.clock = clock
         self.stars = StarPlacement.cells(in: maze, count: difficulty.collectibleCount)
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
@@ -130,9 +137,9 @@ final class MazeGameSession {
         self.isApplauseOn = defaults.object(forKey: Self.applauseKey) as? Bool ?? true
         let savedStyles = Set((defaults.stringArray(forKey: Self.mazeStylesKey) ?? []).compactMap(MazeStyle.init(rawValue:)))
         self.enabledMazeStyles = savedStyles.isEmpty ? Set(MazeStyle.allCases) : savedStyles
-        self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
+        self.isDemoVisible = !defaults.bool(forKey: PlayerRoster.key(Self.demoSeenKey, for: player))
         self.hasSeenIntro = defaults.bool(forKey: Self.introSeenKey)
-        self.completedMazes = defaults.integer(forKey: Self.completedKey)
+        self.completedMazes = defaults.integer(forKey: PlayerRoster.key(Self.completedKey, for: player))
         self.difficulty = difficulty
         self.theme = MazeTheme.theme(for: seed)
         self.seed = seed
@@ -165,7 +172,7 @@ final class MazeGameSession {
     func dismissDemo() {
         guard isDemoVisible else { return }
         isDemoVisible = false
-        defaults.set(true, forKey: Self.demoSeenKey)
+        defaults.set(true, forKey: playerKey(Self.demoSeenKey))
     }
 
     /// Brings the demo back for a player who has not started the maze. Called after the
@@ -271,13 +278,71 @@ final class MazeGameSession {
         return MazeSolver.hint(in: maze, from: path.end, level: hintLevel)
     }
 
+    // MARK: - Players
+
+    /// The key one of the current player's settings is saved under.
+    private func playerKey(_ base: String) -> String { PlayerRoster.key(base, for: roster.currentID) }
+
+    /// How many stickers and stars a player has, for the list of players.
+    func summary(of player: Player) -> (stickers: Int, stars: Int) {
+        if player.id == roster.currentID { return (collection.ownedStickerCount, collection.totalStars) }
+        let saved = CollectionStore.savedProgress(defaults: defaults, key: PlayerRoster.key(PlayerData.progress, for: player.id))
+        return (saved.stickers.count, saved.lifetimeStars)
+    }
+
+    /// Switches to another player, with their stickers, characters and difficulty, on a fresh maze.
+    func selectPlayer(_ id: UUID) {
+        guard id != roster.currentID else { return }
+        roster.select(id)
+        loadCurrentPlayer()
+    }
+
+    /// Adds a player and switches to them. They start on Beginner and are shown how to play.
+    func addPlayer(name: String, avatar: String) {
+        guard roster.canAddPlayer else { return }
+        roster.add(name: name, avatar: avatar)
+        roster.select(roster.players[roster.players.count - 1].id)
+        loadCurrentPlayer()
+    }
+
+    /// Removes a player and everything they earned (the last one cannot be removed).
+    func removePlayer(_ id: UUID) {
+        let wasPlaying = id == roster.currentID
+        roster.remove(id)
+        if wasPlaying { loadCurrentPlayer() }
+    }
+
+    /// Loads everything that belongs to the current player and starts a maze for them.
+    private func loadCurrentPlayer() {
+        collection = CollectionStore(defaults: defaults, key: playerKey(PlayerData.progress))
+        difficulty = defaults.string(forKey: playerKey(Self.difficultyKey)).flatMap(MazeDifficulty.init(rawValue:)) ?? .beginner
+        completedMazes = defaults.integer(forKey: playerKey(Self.completedKey))
+        newMaze()
+        // A new player is shown how to play; one who has been shown is not.
+        isDemoVisible = !defaults.bool(forKey: playerKey(Self.demoSeenKey))
+    }
+
     // MARK: - Starting over
 
-    /// Wipes everything remembered (stickers, statistics, settings, difficulty and the
-    /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
-    func resetEverything() {
+    /// Wipes the current player's progress (stickers, stars, characters, statistics and
+    /// difficulty) and starts them on a fresh beginner maze. Other players are untouched.
+    func resetCurrentPlayer() {
         collection.reset()
-        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.mazeStylesKey, Self.difficultyKey, Self.demoSeenKey, Self.introSeenKey, Self.completedKey] {
+        for base in [Self.difficultyKey, Self.demoSeenKey, Self.completedKey] {
+            defaults.removeObject(forKey: playerKey(base))
+        }
+        completedMazes = 0
+        difficulty = .beginner
+        newMaze()
+        isDemoVisible = true
+    }
+
+    /// Wipes everything remembered (every player and what they earned, plus the settings) and
+    /// starts a fresh beginner maze for a new first player, as on the very first launch.
+    func resetEverything() {
+        roster.resetAll()
+        collection = CollectionStore(defaults: defaults, key: playerKey(PlayerData.progress))
+        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.mazeStylesKey, Self.introSeenKey] {
             defaults.removeObject(forKey: key)
         }
         completedMazes = 0
@@ -287,15 +352,15 @@ final class MazeGameSession {
         isApplauseOn = true
         hasSeenIntro = false
         enabledMazeStyles = Set(MazeStyle.allCases)
-        newMaze(difficulty: .beginner)
-        defaults.removeObject(forKey: Self.difficultyKey)
+        difficulty = .beginner
+        newMaze()
         isDemoVisible = true
     }
 
     func newMaze(difficulty: MazeDifficulty? = nil, seed: UInt64 = .random(in: .min ... .max)) {
         if let difficulty {
             self.difficulty = difficulty
-            defaults.set(difficulty.rawValue, forKey: Self.difficultyKey)
+            defaults.set(difficulty.rawValue, forKey: playerKey(Self.difficultyKey))
         }
         self.seed = seed
         sounds.startMelody(at: Melody.startPosition(for: seed))
@@ -461,7 +526,7 @@ final class MazeGameSession {
         hintLevel = nil
         isDragLive = false
         completedMazes += 1
-        defaults.set(completedMazes, forKey: Self.completedKey)
+        defaults.set(completedMazes, forKey: playerKey(Self.completedKey))
         lastReward = collection.recordFinish(
             theme: theme,
             difficulty: difficulty,

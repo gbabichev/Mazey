@@ -2081,6 +2081,154 @@ struct MazeEngineTests {
         for color in badgeColors { #expect(Color.contrastRatio(color, color.readableText) >= 4.5) }
     }
 
+    // MARK: - Players
+
+    @Test func aFreshInstallHasOnePlayer() {
+        let roster = PlayerRoster(defaults: isolatedDefaults())
+        #expect(roster.players.count == 1)
+        #expect(roster.current.name == "Player 1")
+        #expect(PlayerAvatar.all.contains(roster.current.avatar))
+    }
+
+    @Test func playersAreRememberedBetweenLaunches() {
+        let defaults = isolatedDefaults()
+        let roster = PlayerRoster(defaults: defaults)
+        let second = roster.add(name: "Mia")
+        roster.select(second.id)
+        let again = PlayerRoster(defaults: defaults)
+        #expect(again.players.map(\.name) == ["Player 1", "Mia"])
+        #expect(again.currentID == second.id)
+    }
+
+    @Test func namesAreTidiedAndPicturesAreSuggestedWithoutRepeats() {
+        let roster = PlayerRoster(defaults: isolatedDefaults())
+        let blank = roster.add(name: "   ")
+        #expect(blank.name == "Player 2")
+        let long = roster.add(name: "  Alexandria the Great Explorer ")
+        #expect(long.name.count == 14 && !long.name.hasPrefix(" "))
+        let avatars = roster.players.map(\.avatar)
+        #expect(Set(avatars).count == avatars.count, "each new player gets a picture nobody has")
+    }
+
+    @Test func thereIsALimitToHowManyPlayersAreAdded() {
+        let roster = PlayerRoster(defaults: isolatedDefaults())
+        while roster.canAddPlayer { roster.add(name: "") }
+        #expect(roster.players.count == PlayerRoster.maximumPlayers)
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: isolatedDefaults())
+        for _ in 0..<(PlayerRoster.maximumPlayers + 3) { session.addPlayer(name: "", avatar: "🐶") }
+        #expect(session.roster.players.count == PlayerRoster.maximumPlayers)
+    }
+
+    @Test func theLastPlayerCannotBeRemoved() {
+        let roster = PlayerRoster(defaults: isolatedDefaults())
+        roster.remove(roster.current.id)
+        #expect(roster.players.count == 1)
+    }
+
+    @Test func progressFromTheSinglePlayerAppMovesToTheFirstPlayer() throws {
+        let defaults = isolatedDefaults()
+        // What the app saved before there were players.
+        let old = CollectionStore(defaults: defaults)
+        _ = record(old, stars: 6, of: 6)
+        defaults.set("hard", forKey: MazeGameSession.difficultyKey)
+        defaults.set(true, forKey: MazeGameSession.demoSeenKey)
+        defaults.set(7, forKey: MazeGameSession.completedKey)
+
+        let session = MazeGameSession(seed: 3, defaults: defaults)
+        #expect(session.collection.totalStars == 6)
+        #expect(session.collection.ownedStickerCount == 1)
+        #expect(session.difficulty == .hard)
+        #expect(session.completedMazes == 7)
+        #expect(!session.isDemoVisible)
+        // The old plain keys are gone, so nothing is counted twice.
+        #expect(defaults.data(forKey: CollectionStore.key) == nil)
+        #expect(defaults.object(forKey: MazeGameSession.difficultyKey) == nil)
+        // And it is still there on the next launch.
+        #expect(MazeGameSession(seed: 4, defaults: defaults).collection.totalStars == 6)
+    }
+
+    @Test func eachPlayerHasTheirOwnStickersStarsAndCharacters() {
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: isolatedDefaults())
+        let first = session.roster.currentID
+        _ = record(session.collection, stars: 12, of: 12)
+        let firstStars = session.collection.totalStars
+        #expect(firstStars == 12 && session.collection.ownedStickerCount == 1)
+        session.collection.select(PlayerCharacter.all[0])
+
+        session.addPlayer(name: "Sam", avatar: "🐻")
+        #expect(session.roster.current.name == "Sam")
+        #expect(session.collection.totalStars == 0 && session.collection.ownedStickerCount == 0)
+        #expect(session.collection.selectedCharacter == nil && session.playerEmoji == session.theme.playerEmoji)
+
+        _ = record(session.collection, stars: 3, of: 3)
+        session.selectPlayer(first)
+        #expect(session.collection.totalStars == firstStars, "nothing from Sam leaks into the first player")
+        #expect(session.collection.selectedCharacter == PlayerCharacter.all[0])
+        #expect(session.summary(of: session.roster.players[1]).stars == 3)
+    }
+
+    @Test func eachPlayerKeepsTheirOwnDifficultyAndIsShownHowToPlay() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .beginner, seed: 1, defaults: defaults)
+        session.dismissDemo()
+        session.newMaze(difficulty: .expert)
+        let first = session.roster.currentID
+
+        session.addPlayer(name: "Sam", avatar: "🐻")
+        #expect(session.difficulty == .beginner, "a new player starts easy")
+        #expect(session.isDemoVisible, "and is shown how to play")
+        session.newMaze(difficulty: .easy)
+
+        session.selectPlayer(first)
+        #expect(session.difficulty == .expert)
+        #expect(!session.isDemoVisible, "the first player has seen the demo")
+        // Remembered next launch, for whoever was playing.
+        #expect(MazeGameSession(defaults: defaults).difficulty == .expert)
+    }
+
+    @Test func removingAPlayerDeletesWhatTheyEarnedAndKeepsTheOthers() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults)
+        let first = session.roster.currentID
+        _ = record(session.collection, stars: 5, of: 5)
+        session.addPlayer(name: "Sam", avatar: "🐻")
+        let sam = session.roster.currentID
+        _ = record(session.collection, stars: 9, of: 9)
+
+        // Removing the player who is playing moves to the one left.
+        session.removePlayer(sam)
+        #expect(session.roster.currentID == first)
+        #expect(session.collection.totalStars == 5)
+        #expect(defaults.data(forKey: PlayerRoster.key(PlayerData.progress, for: sam)) == nil)
+    }
+
+    @Test func resettingOnePlayerLeavesTheOthersAlone() {
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: isolatedDefaults())
+        let first = session.roster.currentID
+        _ = record(session.collection, stars: 5, of: 5)
+        session.addPlayer(name: "Sam", avatar: "🐻")
+        _ = record(session.collection, stars: 9, of: 9)
+        session.resetCurrentPlayer()
+        #expect(session.collection.totalStars == 0 && session.isDemoVisible && session.difficulty == .beginner)
+        #expect(session.roster.players.count == 2, "Sam is still a player")
+        session.selectPlayer(first)
+        #expect(session.collection.totalStars == 5)
+    }
+
+    @Test func resettingEverythingRemovesEveryPlayer() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults)
+        _ = record(session.collection, stars: 5, of: 5)
+        session.addPlayer(name: "Sam", avatar: "🐻")
+        _ = record(session.collection, stars: 9, of: 9)
+        session.isSoundOn = false
+        session.resetEverything()
+        #expect(session.roster.players.count == 1 && session.roster.current.name == "Player 1")
+        #expect(session.collection.totalStars == 0 && session.isSoundOn && session.isDemoVisible)
+        let relaunched = MazeGameSession(seed: 2, defaults: defaults)
+        #expect(relaunched.roster.players.count == 1 && relaunched.collection.totalStars == 0)
+    }
+
     // MARK: - Stress
 
     @Test func generatingThousandsOfMazesIsSafe() {

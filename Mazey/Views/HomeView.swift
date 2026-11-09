@@ -13,6 +13,7 @@ struct HomeView: View {
     let onCharacters: () -> Void
 
     @State private var showsSettings = false
+    @State private var showsPlayers = false
     /// Where the title and buttons are, so no scenery is drawn behind them.
     @State private var clearAreas: [String: CGRect] = [:]
 
@@ -30,17 +31,24 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
         }
+        // Typing a player's name in a sheet must not reflow this screen behind it.
+        .ignoresSafeArea(.keyboard)
         .background {
             ThemeBackdrop(theme: theme, seed: session.maze.seed, keepClear: Array(clearAreas.values))
                 .ignoresSafeArea()
         }
         .toolbar {
+            ToolbarItem(placement: leadingPlacement) {
+                Button { showsPlayers = true } label: { playerChip }
+                    .accessibilityLabel("Players. Playing now: \(session.roster.current.name)")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { showsSettings = true } label: { Image(systemName: "gearshape.fill") }
                     .accessibilityLabel("Settings")
             }
         }
         .sheet(isPresented: $showsSettings) { SettingsView(session: session) }
+        .sheet(isPresented: $showsPlayers) { PlayersView(session: session) }
         .themedWindowAppearance(theme)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -50,6 +58,26 @@ struct HomeView: View {
     }
 
     // MARK: - Pieces
+
+    private var leadingPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
+    /// Who is playing: their picture and name, which opens the list of players.
+    private var playerChip: some View {
+        HStack(spacing: 6) {
+            Text(session.roster.current.avatar).font(.system(size: 22))
+            Text(session.roster.current.name)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .lineLimit(1)
+            Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+        }
+        .padding(.horizontal, 4)
+    }
 
     /// The title, with the theme's character on its way to the goal.
     private var hero: some View {
@@ -86,7 +114,11 @@ struct HomeView: View {
     }
 
     private func menuStack(sideBySide: Bool) -> some View {
-        VStack(spacing: 18) {
+        // Each layout reports its own places under its own name. If they shared names, a layout that
+        // was shown only for a moment (the keyboard can squeeze the screen) would leave its places
+        // behind, and the layout that returns would not report again.
+        let variant = sideBySide ? "compact" : "stacked"
+        return VStack(spacing: 18) {
             Button(action: onPlay) {
                 Label("Play", systemImage: "play.fill")
                     .font(.system(size: 40, weight: .heavy, design: .rounded))
@@ -97,7 +129,7 @@ struct HomeView: View {
             .buttonStyle(.borderedProminent)
             .tint(theme.accent)
             .controlSize(.extraLarge)
-            .keepsSceneryClear("play", in: $clearAreas)
+            .keepsSceneryClear("play.\(variant)", in: $clearAreas)
 
             let layout = sideBySide ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 18))
             layout {
@@ -105,13 +137,13 @@ struct HomeView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.extraLarge)
                     .tint(titleColor)
-                    .keepsSceneryClear("stickers", in: $clearAreas)
+                    .keepsSceneryClear("stickers.\(variant)", in: $clearAreas)
 
                 Button(action: onCharacters) { charactersButtonLabel }
                     .buttonStyle(.bordered)
                     .controlSize(.extraLarge)
                     .tint(titleColor)
-                    .keepsSceneryClear("characters", in: $clearAreas)
+                    .keepsSceneryClear("characters.\(variant)", in: $clearAreas)
             }
             .frame(maxWidth: sideBySide ? 360 : nil)
         }

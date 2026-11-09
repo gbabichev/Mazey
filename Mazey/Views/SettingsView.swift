@@ -12,9 +12,18 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsStatistics = false
     @State private var showsIntro = false
+    @State private var confirmsResetAll = false
 
     var body: some View {
         content
+            .sheet(isPresented: $confirmsResetAll) {
+                ParentGateView(
+                    message: "This erases every player and all their stickers, stars, characters and statistics, plus the settings, as if the app was just installed. It cannot be undone."
+                ) {
+                    session.resetEverything()
+                    dismiss()
+                }
+            }
             .sheet(isPresented: $showsIntro) {
                 IntroView(theme: session.theme) { showsIntro = false }
                     #if os(macOS)
@@ -37,7 +46,7 @@ struct SettingsView: View {
                 }
         }
         .presentationDetents([.medium, .large])
-        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection, onReset: session.resetEverything) }
+        .sheet(isPresented: $showsStatistics) { StatisticsView(player: session.roster.current, collection: session.collection, onReset: session.resetCurrentPlayer) }
         #else
         // A Mac sheet has no navigation bar: a heading, the switches, and a Done button.
         VStack(alignment: .leading, spacing: 16) {
@@ -54,7 +63,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 400)
-        .sheet(isPresented: $showsStatistics) { StatisticsView(collection: session.collection, onReset: session.resetEverything) }
+        .sheet(isPresented: $showsStatistics) { StatisticsView(player: session.roster.current, collection: session.collection, onReset: session.resetCurrentPlayer) }
         #endif
     }
 
@@ -114,7 +123,13 @@ struct SettingsView: View {
                 Label("Statistics", systemImage: "chart.bar.fill")
             }
         } footer: {
-            Text("How many mazes, and how long they take. For grown-ups.")
+            Text("How many mazes, and how long they take, for the player who is playing. For grown-ups.")
+        }
+
+        Section {
+            Button("Reset everything…", role: .destructive) { confirmsResetAll = true }
+        } footer: {
+            Text("Erases every player and starts the app over.")
         }
     }
 }

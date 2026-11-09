@@ -9,8 +9,10 @@ import SwiftUI
 /// The numbers for grown-ups: how many mazes, how long they take, and how it is trending.
 /// Children never see times, so there is nothing to race against.
 struct StatisticsView: View {
+    /// Whose numbers these are; each player has their own.
+    let player: Player
     let collection: CollectionStore
-    /// Wipes everything and starts the app over.
+    /// Wipes this player's progress and starts them over.
     let onReset: () -> Void
     @State private var confirmsReset = false
     @Environment(\.dismiss) private var dismiss
@@ -47,6 +49,11 @@ struct StatisticsView: View {
 
     private var content: some View {
         Form {
+            Section {
+                LabeledContent("Player") {
+                    Text("\(player.avatar) \(player.name)")
+                }
+            }
             if statistics.totalFinished == 0 {
                 Section {
                     Text("No mazes finished yet. Numbers will show up here after the first one.")
@@ -61,7 +68,9 @@ struct StatisticsView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $confirmsReset) {
-            ParentGateView {
+            ParentGateView(
+                message: "This erases \(player.name)'s stickers, stars, characters and statistics, as if they had just started. Other players are not changed. It cannot be undone."
+            ) {
                 onReset()
                 dismiss()
             }
@@ -70,9 +79,9 @@ struct StatisticsView: View {
 
     private var resetSection: some View {
         Section {
-            Button("Reset everything…", role: .destructive) { confirmsReset = true }
+            Button("Reset \(player.name)'s progress…", role: .destructive) { confirmsReset = true }
         } footer: {
-            Text("Clears stickers, statistics and settings and starts over.")
+            Text("Clears this player's stickers, stars, characters and statistics and starts them over. Other players are not changed.")
         }
     }
 
@@ -147,58 +156,6 @@ struct StatisticsView: View {
                 }
                 .font(.callout)
             }
-        }
-    }
-}
-
-/// "Ask a grown-up": the reset only goes ahead when a simple sum is answered correctly.
-private struct ParentGateView: View {
-    let onPassed: () -> Void
-    @State private var gate = ParentGate.make()
-    @State private var missed = false
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Text("Ask a grown-up")
-                .font(.title2.weight(.semibold))
-            Text("This erases all stickers, stars, statistics and settings, as if the app was just installed. It cannot be undone.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Text("What is \(gate.question)?")
-                .font(.title.weight(.bold))
-                .padding(.top, 4)
-            HStack(spacing: 12) {
-                ForEach(gate.choices, id: \.self) { choice in
-                    Button("\(choice)") { choose(choice) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .font(.title3.weight(.semibold))
-                }
-            }
-            if missed {
-                Text("Not quite. Here is another one.")
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-            Button("Cancel", role: .cancel) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-        }
-        .padding(24)
-        #if os(iOS)
-        .presentationDetents([.medium])
-        #else
-        .frame(width: 420)
-        #endif
-    }
-
-    private func choose(_ choice: Int) {
-        if gate.isCorrect(choice) {
-            dismiss()
-            onPassed()
-        } else {
-            missed = true
-            gate = ParentGate.make()
         }
     }
 }

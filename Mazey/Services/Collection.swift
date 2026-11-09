@@ -162,7 +162,8 @@ nonisolated struct Statistics: Sendable {
 @MainActor
 @Observable
 final class CollectionStore {
-    static let key = "progress.v1"
+    /// Where one player's progress is saved. The single-player app used this key as it is.
+    static let key = PlayerData.progress
     /// Older finishes are dropped past this, so the saved data stays small.
     static let maximumRecords = 1000
     /// A personal best is only announced after this many earlier mazes at that difficulty.
@@ -170,14 +171,23 @@ final class CollectionStore {
 
     private(set) var progress: Progress
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let storageKey: String
 
-    init(defaults: UserDefaults = .standard) {
+    /// `key` is where this player's progress is saved; each player has their own.
+    init(defaults: UserDefaults = .standard, key: String = CollectionStore.key) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: Self.key), let saved = try? JSONDecoder().decode(Progress.self, from: data) {
+        self.storageKey = key
+        if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Progress.self, from: data) {
             progress = saved
         } else {
             progress = Progress()
         }
+    }
+
+    /// What a player has saved, read without making them the player who is playing.
+    static func savedProgress(defaults: UserDefaults, key: String) -> Progress {
+        guard let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Progress.self, from: data) else { return Progress() }
+        return saved
     }
 
     // MARK: Recording
@@ -230,12 +240,12 @@ final class CollectionStore {
     /// Forgets every sticker and finished maze, as if the app had never been played.
     func reset() {
         progress = Progress()
-        defaults.removeObject(forKey: Self.key)
+        defaults.removeObject(forKey: storageKey)
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(progress) {
-            defaults.set(data, forKey: Self.key)
+            defaults.set(data, forKey: storageKey)
         }
     }
 
