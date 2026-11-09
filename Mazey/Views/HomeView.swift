@@ -5,12 +5,12 @@
 
 import SwiftUI
 
-/// The first screen: a big Play button, then the sticker book and friends. Wide screens put the title beside the buttons.
+/// The first screen: a big Play button, then the sticker book and characters. Wide screens put the title beside the buttons.
 struct HomeView: View {
     let session: MazeGameSession
     let onPlay: () -> Void
     let onStickers: () -> Void
-    let onFriends: () -> Void
+    let onCharacters: () -> Void
 
     @State private var showsSettings = false
     /// Where the title and buttons are, so no scenery is drawn behind them.
@@ -76,8 +76,8 @@ struct HomeView: View {
         }
     }
 
-    /// Play, then the sticker book and friends. When there is not enough
-    /// height (a phone on its side) the sticker book and friends sit side by side.
+    /// Play, then the sticker book and characters. When there is not enough
+    /// height (a phone on its side) the sticker book and characters sit side by side.
     private var menu: some View {
         ViewThatFits(in: .vertical) {
             menuStack(sideBySide: false)
@@ -107,11 +107,11 @@ struct HomeView: View {
                     .tint(titleColor)
                     .keepsSceneryClear("stickers", in: $clearAreas)
 
-                Button(action: onFriends) { friendsButtonLabel }
+                Button(action: onCharacters) { charactersButtonLabel }
                     .buttonStyle(.bordered)
                     .controlSize(.extraLarge)
                     .tint(titleColor)
-                    .keepsSceneryClear("friends", in: $clearAreas)
+                    .keepsSceneryClear("characters", in: $clearAreas)
             }
             .frame(maxWidth: sideBySide ? 360 : nil)
         }
@@ -129,19 +129,19 @@ struct HomeView: View {
         }
     }
 
-    /// The friends picker: who is playing now, its name, and how far the next friend is.
-    private var friendsButtonLabel: some View {
+    /// The characters picker: who is playing now, its name, and how far the next character is.
+    private var charactersButtonLabel: some View {
         let collection = session.collection
         let detail: (symbol: String, text: String)
-        if let next = Friend.next(after: collection.totalStars) {
+        if let next = PlayerCharacter.next(after: collection.totalStars) {
             detail = ("star.fill", "\(collection.totalStars) / \(next.starsNeeded)")
         } else {
             detail = ("star.fill", "All found!")
         }
         return menuButtonLabel(
-            title: "Friends",
+            title: "Characters",
             detail: detail,
-            accessibility: "Friends, \(collection.unlockedFriends.count) of \(Friend.all.count) unlocked"
+            accessibility: "Characters, \(collection.unlockedCharacters.count) of \(PlayerCharacter.all.count) unlocked"
         ) {
             Text(session.playerEmoji).font(.system(size: 34))
         }

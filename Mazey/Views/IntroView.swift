@@ -6,7 +6,7 @@
 import SwiftUI
 
 /// A short, mostly pictures tour shown on the first launch (and from Settings later): how to
-/// play, what the stars are for, and what the sticker book and friends are. Four pages, each
+/// play, what the stars are for, and what the sticker book and characters are. Four pages, each
 /// with one big picture and one short line, and it can be skipped at any time.
 struct IntroView: View {
     let theme: MazeTheme
@@ -107,7 +107,7 @@ struct IntroView: View {
                 DragPicture(theme: theme)
             }
         case 1:
-            slide(title: "Collect stars", line: "Pick up the stars on your way. Stars unlock new friends.") {
+            slide(title: "Collect stars", line: "Pick up the stars on your way. Stars unlock new characters.") {
                 StarsPicture()
             }
         case 2:
@@ -115,8 +115,8 @@ struct IntroView: View {
                 StickersPicture(theme: theme)
             }
         default:
-            slide(title: "Meet friends", line: "Collect enough stars to unlock new friends to play as.") {
-                FriendsPicture(theme: theme)
+            slide(title: "Meet new characters", line: "Collect enough stars to unlock new characters to play as.") {
+                CharactersPicture(theme: theme)
             }
         }
     }
@@ -246,18 +246,18 @@ private struct StickersPicture: View {
     }
 }
 
-/// A few friends, with the first one's star price.
-private struct FriendsPicture: View {
+/// A few characters, with the first one's star price.
+private struct CharactersPicture: View {
     let theme: MazeTheme
     @State private var shown = false
 
     var body: some View {
-        let friends = Array(Friend.all.prefix(3))
+        let characters = Array(PlayerCharacter.all.prefix(3))
         HStack(spacing: 14) {
-            ForEach(Array(friends.enumerated()), id: \.element.id) { index, friend in
+            ForEach(Array(characters.enumerated()), id: \.element.id) { index, character in
                 VStack(spacing: 6) {
-                    Text(friend.emoji).font(.system(size: 54))
-                    Label("\(friend.starsNeeded)", systemImage: "star.fill")
+                    Text(character.emoji).font(.system(size: 54))
+                    Label("\(character.starsNeeded)", systemImage: "star.fill")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(theme.ink)
                 }

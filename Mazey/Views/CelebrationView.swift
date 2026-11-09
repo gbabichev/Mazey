@@ -9,12 +9,12 @@ import SwiftUI
 struct CelebrationView: View {
     let theme: MazeTheme
     let reward: FinishReward?
-    /// Plays as a friend this maze just unlocked.
-    let onChooseFriend: (Friend) -> Void
+    /// Plays as a character this maze just unlocked.
+    let onChooseCharacter: (PlayerCharacter) -> Void
     let onNext: () -> Void
 
     @State private var popped = false
-    @State private var chosenFriend: Friend?
+    @State private var chosenCharacter: PlayerCharacter?
 
     var body: some View {
         // Tall spaces stack everything; short ones (a phone on its side) put the sticker beside the
@@ -88,13 +88,13 @@ struct CelebrationView: View {
             .foregroundStyle(theme.headlineColor)
     }
 
-    /// The short labels: what was earned and how far the next friend is.
+    /// The short labels: what was earned and how far the next character is.
     @ViewBuilder
     private var details: some View {
         if let reward {
             badges(reward)
-            ForEach(reward.newFriends) { friend in friendOffer(friend) }
-            nextFriendHint(reward)
+            ForEach(reward.newCharacters) { character in characterOffer(character) }
+            nextCharacterHint(reward)
         }
     }
 
@@ -133,31 +133,31 @@ struct CelebrationView: View {
         }
     }
 
-    /// A friend unlocked by this maze, with a button to start playing as them. The two always
+    /// A character unlocked by this maze, with a button to start playing as them. The two always
     /// stack, so the row is never wider than the card (a wide row would push the whole card
     /// into the side-by-side layout, even on a portrait phone).
-    private func friendOffer(_ friend: Friend) -> some View {
+    private func characterOffer(_ character: PlayerCharacter) -> some View {
         VStack(spacing: 6) {
-            Text("\(friend.emoji) New friend: \(friend.name)!")
+            Text("\(character.emoji) New character: \(character.name)!")
                 .font(.system(size: 20, weight: .heavy, design: .rounded))
                 .foregroundStyle(theme.headlineColor)
                 .multilineTextAlignment(.center)
-            friendButton(friend)
+            characterButton(character)
         }
     }
 
     @ViewBuilder
-    private func friendButton(_ friend: Friend) -> some View {
-        if chosenFriend == friend {
-            Label("Playing as \(friend.name)", systemImage: "checkmark.circle.fill")
+    private func characterButton(_ character: PlayerCharacter) -> some View {
+        if chosenCharacter == character {
+            Label("Playing as \(character.name)", systemImage: "checkmark.circle.fill")
                 .font(.footnote.weight(.bold))
                 .foregroundStyle(theme.headlineColor)
         } else {
             Button {
-                chosenFriend = friend
-                onChooseFriend(friend)
+                chosenCharacter = character
+                onChooseCharacter(character)
             } label: {
-                Text("Play as \(friend.emoji)")
+                Text("Play as \(character.emoji)")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(theme.headlineColor)
             }
@@ -166,11 +166,11 @@ struct CelebrationView: View {
         }
     }
 
-    /// How far the next friend is, once there is no new one to show.
+    /// How far the next character is, once there is no new one to show.
     @ViewBuilder
-    private func nextFriendHint(_ reward: FinishReward) -> some View {
-        if reward.newFriends.isEmpty, let next = Friend.next(after: reward.totalStars) {
-            Label("\(next.starsNeeded - reward.totalStars) more for a new friend", systemImage: "star.fill")
+    private func nextCharacterHint(_ reward: FinishReward) -> some View {
+        if reward.newCharacters.isEmpty, let next = PlayerCharacter.next(after: reward.totalStars) {
+            Label("\(next.starsNeeded - reward.totalStars) more for a new character", systemImage: "star.fill")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(theme.isDark ? .white.opacity(0.85) : theme.ink.opacity(0.8))
         }

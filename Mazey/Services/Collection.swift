@@ -38,10 +38,16 @@ nonisolated struct Progress: Codable, Equatable, Sendable {
     var finishes: [FinishRecord] = []
     /// Every star ever collected. Kept apart from `finishes`, which drops its oldest records.
     var lifetimeStars = 0
-    /// The friend playing in place of each world's character; nil is the world's own.
-    var friendID: String?
+    /// The character chosen to play as, in place of each world's own; nil means the world's own.
+    var characterID: String?
 
     init() {}
+
+    /// `characterID` is still saved under its old name, `friendID`, so earlier saves keep working.
+    private enum CodingKeys: String, CodingKey {
+        case stickers, finishes, lifetimeStars
+        case characterID = "friendID"
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -49,7 +55,7 @@ nonisolated struct Progress: Codable, Equatable, Sendable {
         finishes = try container.decodeIfPresent([FinishRecord].self, forKey: .finishes) ?? []
         lifetimeStars = try container.decodeIfPresent(Int.self, forKey: .lifetimeStars)
             ?? finishes.reduce(0) { $0 + $1.starsCollected }
-        friendID = try container.decodeIfPresent(String.self, forKey: .friendID)
+        characterID = try container.decodeIfPresent(String.self, forKey: .characterID)
     }
 
     static func key(themeID: String, index: Int) -> String { "\(themeID)/\(index)" }
@@ -82,8 +88,8 @@ nonisolated struct FinishReward: Equatable, Sendable {
     var starsTotal: Int
     /// All the stars collected so far, this maze's included.
     var totalStars: Int
-    /// Friends this maze unlocked.
-    var newFriends: [Friend]
+    /// Characters this maze unlocked.
+    var newCharacters: [PlayerCharacter]
     /// The fastest maze so far at this difficulty (only announced after a few tries).
     var isPersonalBest: Bool
 }
@@ -200,7 +206,7 @@ final class CollectionStore {
 
         let starsBefore = progress.lifetimeStars
         progress.lifetimeStars += starsCollected
-        let newFriends = Friend.all.filter { $0.starsNeeded > starsBefore && $0.starsNeeded <= progress.lifetimeStars }
+        let newCharacters = PlayerCharacter.all.filter { $0.starsNeeded > starsBefore && $0.starsNeeded <= progress.lifetimeStars }
 
         let earlier = progress.finishes.filter { $0.difficulty == difficulty }
         let isBest = earlier.count >= Self.bestNeedsHistory && earlier.allSatisfy { seconds < $0.seconds }
@@ -217,7 +223,7 @@ final class CollectionStore {
         return FinishReward(
             themeID: theme.id, stickerIndex: index, sticker: theme.stickers[index], isNew: isNew,
             starsCollected: starsCollected, starsTotal: starsTotal, totalStars: progress.lifetimeStars,
-            newFriends: newFriends, isPersonalBest: isBest
+            newCharacters: newCharacters, isPersonalBest: isBest
         )
     }
 
@@ -233,23 +239,23 @@ final class CollectionStore {
         }
     }
 
-    // MARK: Friends
+    // MARK: Characters
 
     /// All the stars collected, ever.
     var totalStars: Int { progress.lifetimeStars }
 
-    var unlockedFriends: [Friend] { Friend.unlocked(by: totalStars) }
+    var unlockedCharacters: [PlayerCharacter] { PlayerCharacter.unlocked(by: totalStars) }
 
-    /// The friend chosen to play as, or nil for each world's own character.
-    var selectedFriend: Friend? {
-        guard let friend = Friend.friend(id: progress.friendID), friend.isUnlocked(by: totalStars) else { return nil }
-        return friend
+    /// The character chosen to play as, or nil for each world's own character.
+    var selectedCharacter: PlayerCharacter? {
+        guard let character = PlayerCharacter.character(id: progress.characterID), character.isUnlocked(by: totalStars) else { return nil }
+        return character
     }
 
-    /// Plays as `friend` (nil for the world's own). A friend not unlocked yet is ignored.
-    func select(_ friend: Friend?) {
-        if let friend, !friend.isUnlocked(by: totalStars) { return }
-        progress.friendID = friend?.id
+    /// Plays as `character` (nil for the world's own). A character not unlocked yet is ignored.
+    func select(_ character: PlayerCharacter?) {
+        if let character, !character.isUnlocked(by: totalStars) { return }
+        progress.characterID = character?.id
         save()
     }
 

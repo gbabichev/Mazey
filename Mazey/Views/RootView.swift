@@ -9,11 +9,11 @@ import SwiftUI
 enum AppRoute: Hashable {
     case maze
     case stickerBook
-    case friends
+    case characters
 }
 
 /// Owns the one game session and the navigation: the home screen, with the maze and the
-/// sticker book and friends one tap away.
+/// sticker book and characters one tap away.
 struct RootView: View {
     @State private var session = MazeGameSession(sounds: SoundEngine.shared)
     @State private var path: [AppRoute] = []
@@ -38,13 +38,13 @@ struct RootView: View {
                     path.append(.maze)
                 },
                 onStickers: { path.append(.stickerBook) },
-                onFriends: { path.append(.friends) }
+                onCharacters: { path.append(.characters) }
             )
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
                 case .maze: MazeGameView(session: session)
                 case .stickerBook: StickerBookView(session: session)
-                case .friends: FriendsView(session: session)
+                case .characters: CharactersView(session: session)
                 }
             }
         }

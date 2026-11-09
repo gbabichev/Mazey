@@ -1157,54 +1157,54 @@ struct MazeEngineTests {
         #expect(store.progress.finishes.count == 2)
     }
 
-    @Test func friendsUnlockAsStarsAddUp() {
+    @Test func charactersUnlockAsStarsAddUp() {
         let store = CollectionStore(defaults: isolatedDefaults())
-        let first = Friend.all[0], second = Friend.all[1]
-        #expect(store.unlockedFriends.isEmpty)
+        let first = PlayerCharacter.all[0], second = PlayerCharacter.all[1]
+        #expect(store.unlockedCharacters.isEmpty)
         let early = record(store, stars: first.starsNeeded - 1, of: 10)
-        #expect(early.newFriends.isEmpty)
+        #expect(early.newCharacters.isEmpty)
         let reached = record(store, stars: 1, of: 10, seed: 1)
-        #expect(reached.newFriends == [first])
+        #expect(reached.newCharacters == [first])
         // A big haul can unlock several at once, and each is announced only once.
         let big = record(store, stars: second.starsNeeded - first.starsNeeded + 20, of: 40, seed: 2)
-        #expect(big.newFriends.first == second && big.newFriends.count >= 2)
-        #expect(record(store, stars: 0, of: 4, seed: 3).newFriends.isEmpty)
+        #expect(big.newCharacters.first == second && big.newCharacters.count >= 2)
+        #expect(record(store, stars: 0, of: 4, seed: 3).newCharacters.isEmpty)
     }
 
-    @Test func theFriendListIsOrderedAndSized() {
-        #expect((10...25).contains(Friend.all.count))
-        #expect(Set(Friend.all.map(\.id)).count == Friend.all.count)
-        #expect(Friend.all.map(\.starsNeeded) == Friend.all.map(\.starsNeeded).sorted())
-        #expect(Friend.all.first!.starsNeeded <= 10, "the first friend comes quickly")
-        #expect(Friend.all.last!.starsNeeded <= 750, "and the last is within reach")
-        #expect(Friend.next(after: 0) == Friend.all.first)
-        #expect(Friend.next(after: Friend.all.last!.starsNeeded) == nil)
+    @Test func theCharacterListIsOrderedAndSized() {
+        #expect((10...25).contains(PlayerCharacter.all.count))
+        #expect(Set(PlayerCharacter.all.map(\.id)).count == PlayerCharacter.all.count)
+        #expect(PlayerCharacter.all.map(\.starsNeeded) == PlayerCharacter.all.map(\.starsNeeded).sorted())
+        #expect(PlayerCharacter.all.first!.starsNeeded <= 10, "the first character comes quickly")
+        #expect(PlayerCharacter.all.last!.starsNeeded <= 750, "and the last is within reach")
+        #expect(PlayerCharacter.next(after: 0) == PlayerCharacter.all.first)
+        #expect(PlayerCharacter.next(after: PlayerCharacter.all.last!.starsNeeded) == nil)
     }
 
-    @Test func aFriendReplacesTheWorldsCharacterOnceChosen() {
+    @Test func aCharacterReplacesTheWorldsCharacterOnceChosen() {
         let defaults = isolatedDefaults()
         let session = MazeGameSession(difficulty: .easy, seed: 21, defaults: defaults)
-        let friend = Friend.all[0]
+        let character = PlayerCharacter.all[0]
         #expect(session.playerEmoji == session.theme.playerEmoji)
 
-        session.collection.select(friend)
-        #expect(session.collection.selectedFriend == nil, "a locked friend cannot be chosen")
-        _ = record(session.collection, stars: friend.starsNeeded, of: 10)
-        session.collection.select(friend)
-        #expect(session.playerEmoji == friend.emoji)
+        session.collection.select(character)
+        #expect(session.collection.selectedCharacter == nil, "a locked character cannot be chosen")
+        _ = record(session.collection, stars: character.starsNeeded, of: 10)
+        session.collection.select(character)
+        #expect(session.playerEmoji == character.emoji)
 
         // It is remembered, and going back to the default works.
-        #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).playerEmoji == friend.emoji)
+        #expect(MazeGameSession(difficulty: .easy, seed: 1, defaults: defaults).playerEmoji == character.emoji)
         session.collection.select(nil)
         #expect(session.playerEmoji == session.theme.playerEmoji)
     }
 
-    @Test func resettingForgetsStarsAndTheChosenFriend() {
+    @Test func resettingForgetsStarsAndTheChosenCharacter() {
         let store = CollectionStore(defaults: isolatedDefaults())
         _ = record(store, stars: 30, of: 30)
-        store.select(Friend.all[0])
+        store.select(PlayerCharacter.all[0])
         store.reset()
-        #expect(store.totalStars == 0 && store.selectedFriend == nil)
+        #expect(store.totalStars == 0 && store.selectedCharacter == nil)
     }
 
     @Test func oldSavedProgressStillLoadsAndKeepsItsStars() throws {

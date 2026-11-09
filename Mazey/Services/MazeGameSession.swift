@@ -28,8 +28,8 @@ final class MazeGameSession {
     /// What the last finished maze earned, shown on the celebration card.
     private(set) var lastReward: FinishReward?
 
-    /// The character that is dragged to the finish: the chosen friend, or the world's own.
-    var playerEmoji: String { collection.selectedFriend?.emoji ?? theme.playerEmoji }
+    /// The character that is dragged to the finish: the chosen character, or the world's own.
+    var playerEmoji: String { collection.selectedCharacter?.emoji ?? theme.playerEmoji }
     /// The sticker book and the history of finished mazes.
     let collection: CollectionStore
 

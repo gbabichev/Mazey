@@ -48,7 +48,7 @@ struct MazeGameView: View {
                 CelebrationView(
                     theme: session.theme,
                     reward: session.lastReward,
-                    onChooseFriend: { session.collection.select($0) },
+                    onChooseCharacter: { session.collection.select($0) },
                     onNext: { withAnimation { session.newMaze() } }
                 )
                 .padding(12)

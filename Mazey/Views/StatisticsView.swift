@@ -84,7 +84,7 @@ struct StatisticsView: View {
             LabeledContent("Stars collected", value: "\(collection.totalStars)")
             LabeledContent("Mazes with every star", value: "\(statistics.perfectMazes)")
             LabeledContent("Stickers in the book", value: "\(collection.ownedStickerCount) of \(CollectionStore.totalStickerCount)")
-            LabeledContent("Friends unlocked", value: "\(collection.unlockedFriends.count) of \(Friend.all.count)")
+            LabeledContent("Characters unlocked", value: "\(collection.unlockedCharacters.count) of \(PlayerCharacter.all.count)")
             LabeledContent("Days played", value: "\(statistics.daysPlayed)")
             LabeledContent("Days in a row", value: "\(statistics.currentStreak())")
         }

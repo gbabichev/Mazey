@@ -86,7 +86,7 @@ struct SettingsView: View {
                 Label("How to play", systemImage: "questionmark.circle.fill")
             }
         } footer: {
-            Text("A quick tour of stars, stickers and friends.")
+            Text("A quick tour of stars, stickers and characters.")
         }
 
         Section {
