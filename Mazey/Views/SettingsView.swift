@@ -80,6 +80,24 @@ struct SettingsView: View {
         }
 
         Section {
+            ForEach(MazeStyle.allCases, id: \.self) { style in
+                Toggle(isOn: Binding(
+                    get: { session.isMazeStyleOn(style) },
+                    set: { session.setMazeStyle(style, isOn: $0) }
+                )) {
+                    Label(style.settingsTitle, systemImage: style.settingsSymbol)
+                }
+                .toggleStyle(.switch)
+                // The last shape left on has to stay on, so there is always a maze to play.
+                .disabled(session.isMazeStyleOn(style) && session.enabledMazeStyles.count == 1)
+            }
+        } header: {
+            Text("Maze shapes")
+        } footer: {
+            Text("Switch off a shape you don't like. One always stays on.")
+        }
+
+        Section {
             Button {
                 showsIntro = true
             } label: {
@@ -97,6 +115,27 @@ struct SettingsView: View {
             }
         } footer: {
             Text("How many mazes, and how long they take. For grown-ups.")
+        }
+    }
+}
+
+private extension MazeStyle {
+    /// What the shape is called in Settings.
+    var settingsTitle: String {
+        switch self {
+        case .grid: "Squares"
+        case .circular: "Circles"
+        case .hexagon: "Honeycomb"
+        case .triangle: "Triangles"
+        }
+    }
+
+    var settingsSymbol: String {
+        switch self {
+        case .grid: "square"
+        case .circular: "circle"
+        case .hexagon: "hexagon"
+        case .triangle: "triangle"
         }
     }
 }

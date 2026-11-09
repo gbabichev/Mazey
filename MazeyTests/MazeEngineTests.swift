@@ -1686,6 +1686,105 @@ struct MazeEngineTests {
         #expect((140...260).contains(counts[.grid, default: 0]), "\(counts)")
     }
 
+    @Test func everyMazeShapeIsOnByDefaultAndTheLastOneCannotBeSwitchedOff() {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        #expect(session.enabledMazeStyles == Set(MazeStyle.allCases))
+        session.setMazeStyle(.circular, isOn: false)
+        session.setMazeStyle(.hexagon, isOn: false)
+        session.setMazeStyle(.triangle, isOn: false)
+        #expect(session.enabledMazeStyles == [.grid])
+        session.setMazeStyle(.grid, isOn: false)
+        #expect(session.enabledMazeStyles == [.grid], "at least one shape stays on")
+        session.setMazeStyle(.hexagon, isOn: true)
+        #expect(session.enabledMazeStyles == [.grid, .hexagon])
+    }
+
+    @Test func switchedOffShapesAreNeverOffered() {
+        for off in MazeStyle.allCases {
+            let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+            session.updateSpace(roomySpace)
+            session.setMazeStyle(off, isOn: false)
+            var seen: Set<MazeStyle> = []
+            for seed in 0..<200 as Range<UInt64> {
+                session.newMaze(seed: seed)
+                seen.insert(session.maze.style)
+            }
+            #expect(!seen.contains(off), "\(off) was offered: \(seen)")
+            #expect(seen.count == MazeStyle.allCases.count - 1, "the rest are still offered: \(seen)")
+        }
+    }
+
+    @Test func aSingleShapeIsOfferedEveryTimeWhereItFits() {
+        for only in MazeStyle.allCases {
+            let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+            session.updateSpace(roomySpace)
+            for style in MazeStyle.allCases where style != only { session.setMazeStyle(style, isOn: false) }
+            for seed in 0..<60 as Range<UInt64> {
+                session.newMaze(seed: seed)
+                #expect(session.maze.style == only, "\(only), seed \(seed)")
+            }
+        }
+    }
+
+    @Test func theRemainingShapesKeepTheirProportions() {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(roomySpace)
+        session.setMazeStyle(.grid, isOn: false)
+        var counts: [MazeStyle: Int] = [:]
+        for seed in 0..<600 as Range<UInt64> {
+            session.newMaze(seed: seed)
+            counts[session.maze.style, default: 0] += 1
+        }
+        for style in [MazeStyle.circular, .hexagon, .triangle] {
+            #expect((140...260).contains(counts[style, default: 0]), "\(style): \(counts)")
+        }
+    }
+
+    @Test func aMazeNotStartedYetChangesShapeWhenItsShapeIsSwitchedOff() {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(roomySpace)
+        session.newMaze(seed: circularSeed(from: 0, in: session))
+        #expect(session.maze.style == .circular)
+        session.setMazeStyle(.circular, isOn: false)
+        #expect(session.maze.style != .circular)
+        #expect(session.path.cells.count == 1 && !session.isComplete)
+    }
+
+    @Test func aMazeInProgressKeepsItsShapeWhenThatShapeIsSwitchedOff() throws {
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(roomySpace)
+        session.newMaze(seed: circularSeed(from: 0, in: session))
+        let route = try #require(MazeSolver.solve(session.maze, from: session.maze.start))
+        dragAlong(Array(route.prefix(3)), in: session)
+        #expect(session.hasProgress)
+        session.setMazeStyle(.circular, isOn: false)
+        #expect(session.maze.style == .circular, "the maze being played is left alone")
+    }
+
+    @Test func mazeShapeChoicesAreRememberedAndResetToAll() {
+        let defaults = isolatedDefaults()
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: defaults)
+        session.setMazeStyle(.triangle, isOn: false)
+        session.setMazeStyle(.circular, isOn: false)
+        let relaunched = MazeGameSession(difficulty: .medium, seed: 1, defaults: defaults)
+        #expect(relaunched.enabledMazeStyles == [.grid, .hexagon])
+        session.resetEverything()
+        #expect(session.enabledMazeStyles == Set(MazeStyle.allCases))
+        #expect(MazeGameSession(difficulty: .medium, seed: 1, defaults: defaults).enabledMazeStyles == Set(MazeStyle.allCases))
+    }
+
+    @Test func aShapeThatDoesNotFitFallsBackToTheNextOneThatIsOn() {
+        // A phone on its side has no room for round or tiled mazes, so only squares can be made,
+        // even when squares are switched off.
+        let session = MazeGameSession(difficulty: .medium, seed: 1, defaults: isolatedDefaults())
+        session.updateSpace(MazeSpace(size: CGSize(width: 800, height: 300)))
+        session.setMazeStyle(.grid, isOn: false)
+        for seed in 0..<40 as Range<UInt64> {
+            session.newMaze(seed: seed)
+            #expect(session.maze.style == .grid)
+        }
+    }
+
     // MARK: - Hexagon and triangle mazes
 
     private let tiledStyles: [MazeStyle] = [.hexagon, .triangle]

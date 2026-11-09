@@ -58,6 +58,23 @@ final class MazeGameSession {
         didSet { defaults.set(isApplauseOn, forKey: Self.applauseKey) }
     }
 
+    /// The maze shapes that may be offered. A player can switch off shapes they do not like,
+    /// but at least one always stays on.
+    private(set) var enabledMazeStyles: Set<MazeStyle>
+
+    func isMazeStyleOn(_ style: MazeStyle) -> Bool { enabledMazeStyles.contains(style) }
+
+    /// Switches a maze shape on or off. The last shape left on cannot be switched off. A maze
+    /// the player has not started yet changes shape straight away if its own shape was switched off.
+    func setMazeStyle(_ style: MazeStyle, isOn: Bool) {
+        var styles = enabledMazeStyles
+        if isOn { styles.insert(style) } else { styles.remove(style) }
+        guard !styles.isEmpty, styles != enabledMazeStyles else { return }
+        enabledMazeStyles = styles
+        defaults.set(MazeStyle.allCases.filter(styles.contains).map(\.rawValue), forKey: Self.mazeStylesKey)
+        refitUnstartedMaze()
+    }
+
     /// Whether the first-launch intro has been seen (or skipped). It shows once, then only from Settings.
     private(set) var hasSeenIntro: Bool
 
@@ -76,6 +93,7 @@ final class MazeGameSession {
     static let soundKey = "soundEnabled"
     static let dragMusicKey = "dragMusicEnabled"
     static let applauseKey = "applauseEnabled"
+    static let mazeStylesKey = "mazeStyles"
     static let difficultyKey = "difficulty"
     static let demoSeenKey = "demoSeen"
     static let introSeenKey = "introSeen"
@@ -110,6 +128,8 @@ final class MazeGameSession {
         self.isSoundOn = defaults.object(forKey: Self.soundKey) as? Bool ?? true
         self.isDragMusicOn = defaults.object(forKey: Self.dragMusicKey) as? Bool ?? true
         self.isApplauseOn = defaults.object(forKey: Self.applauseKey) as? Bool ?? true
+        let savedStyles = Set((defaults.stringArray(forKey: Self.mazeStylesKey) ?? []).compactMap(MazeStyle.init(rawValue:)))
+        self.enabledMazeStyles = savedStyles.isEmpty ? Set(MazeStyle.allCases) : savedStyles
         self.isDemoVisible = !defaults.bool(forKey: Self.demoSeenKey)
         self.hasSeenIntro = defaults.bool(forKey: Self.introSeenKey)
         self.completedMazes = defaults.integer(forKey: Self.completedKey)
@@ -161,6 +181,12 @@ final class MazeGameSession {
     func updateSpace(_ newSpace: MazeSpace) {
         guard newSpace != space else { return }
         space = newSpace
+        refitUnstartedMaze()
+    }
+
+    /// Regenerates a maze the player has not started, from the same seed, for the current space
+    /// and the maze shapes that are switched on.
+    private func refitUnstartedMaze() {
         guard !hasProgress else { return }
         let fitted = makeMaze(seed: seed)
         guard fitted != maze else { return }
@@ -174,38 +200,67 @@ final class MazeGameSession {
         collectedStars = []
     }
 
-    /// Out of every hundred mazes, how many are circular, hexagon and triangle ones; the rest
-    /// are square grids. The style is picked from the seed so a given maze keeps its style. The
-    /// other styles need a roomy space with cells big enough for fingers; otherwise it is a grid.
+    /// How likely each shape is: out of every hundred mazes (with every shape on), this many are
+    /// circular, hexagon and triangle ones, and the rest are square grids. With some shapes
+    /// switched off, the rest share the mazes in the same proportions. The shape is picked from
+    /// the seed so a given maze keeps its shape. The other shapes need a roomy space with cells
+    /// big enough for fingers; where they do not fit, the next shape that is on is tried, then a grid.
     static let circularShare = 20
     static let hexagonShare = 20
     static let triangleShare = 20
+    static let gridShare = 100 - circularShare - hexagonShare - triangleShare
 
-    /// The style a seed asks for, before checking that the space suits it.
+    private static func share(of style: MazeStyle) -> Int {
+        switch style {
+        case .circular: circularShare
+        case .hexagon: hexagonShare
+        case .triangle: triangleShare
+        case .grid: gridShare
+        }
+    }
+
+    /// The order shapes are rolled in, which also fixes which seeds get which shape.
+    private static let styleOrder: [MazeStyle] = [.circular, .hexagon, .triangle, .grid]
+
+    /// The shape a seed asks for, among those switched on, before checking that the space suits it.
     private func preferredStyle(seed: UInt64) -> MazeStyle {
+        let styles = Self.styleOrder.filter(enabledMazeStyles.contains)
         var rng = SeededGenerator(seed: seed ^ 0xC12C_1E5)
-        let roll = rng.next(below: 100)
-        if roll < Self.circularShare { return .circular }
-        if roll < Self.circularShare + Self.hexagonShare { return .hexagon }
-        if roll < Self.circularShare + Self.hexagonShare + Self.triangleShare { return .triangle }
-        return .grid
+        var roll = rng.next(below: styles.reduce(0) { $0 + Self.share(of: $1) })
+        for style in styles {
+            if roll < Self.share(of: style) { return style }
+            roll -= Self.share(of: style)
+        }
+        return styles.last ?? .grid
     }
 
     /// A maze for the current difficulty, shaped to fit the screen when its space is known.
     private func makeMaze(seed: UInt64) -> Maze {
         guard let space else { return MazeGenerator.generate(difficulty: difficulty, seed: seed) }
-        let style = preferredStyle(seed: seed)
-        if style == .circular, MazeFitter.supportsCircular(cellCount: difficulty.cellCount, in: space) {
-            let rings = CircularShape.rings(forCellCount: difficulty.cellCount)
-            return MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: rings)
-        }
-        if style.isTiled {
-            let count = difficulty.cellCount(for: style)
-            if MazeFitter.supportsTiled(style: style, cellCount: count, in: space) {
-                let shape = MazeFitter.tiledShape(style: style, cellCount: count, in: space)
-                return MazeGenerator.generate(difficulty: difficulty, seed: seed, style: style, rows: shape.rows, columns: shape.columns)
+        let preferred = preferredStyle(seed: seed)
+        let candidates = [preferred] + Self.styleOrder.filter { $0 != preferred && enabledMazeStyles.contains($0) }
+        for style in candidates {
+            switch style {
+            case .circular where MazeFitter.supportsCircular(cellCount: difficulty.cellCount, in: space):
+                let rings = CircularShape.rings(forCellCount: difficulty.cellCount)
+                return MazeGenerator.generate(difficulty: difficulty, seed: seed, rings: rings)
+            case .hexagon, .triangle:
+                let count = difficulty.cellCount(for: style)
+                if MazeFitter.supportsTiled(style: style, cellCount: count, in: space) {
+                    let shape = MazeFitter.tiledShape(style: style, cellCount: count, in: space)
+                    return MazeGenerator.generate(difficulty: difficulty, seed: seed, style: style, rows: shape.rows, columns: shape.columns)
+                }
+            case .grid:
+                return gridMaze(seed: seed, in: space)
+            default:
+                break
             }
         }
+        // Nothing that is switched on fits this space (a phone on its side, say), so a grid it is.
+        return gridMaze(seed: seed, in: space)
+    }
+
+    private func gridMaze(seed: UInt64, in space: MazeSpace) -> Maze {
         let shape = MazeFitter.shape(cellCount: difficulty.cellCount, in: space)
         return MazeGenerator.generate(difficulty: difficulty, seed: seed, rows: shape.rows, columns: shape.columns)
     }
@@ -222,7 +277,7 @@ final class MazeGameSession {
     /// first-run demo) and starts a fresh beginner maze, as on the very first launch.
     func resetEverything() {
         collection.reset()
-        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.difficultyKey, Self.demoSeenKey, Self.introSeenKey, Self.completedKey] {
+        for key in [Self.soundKey, Self.dragMusicKey, Self.applauseKey, Self.mazeStylesKey, Self.difficultyKey, Self.demoSeenKey, Self.introSeenKey, Self.completedKey] {
             defaults.removeObject(forKey: key)
         }
         completedMazes = 0
@@ -231,6 +286,7 @@ final class MazeGameSession {
         isDragMusicOn = true
         isApplauseOn = true
         hasSeenIntro = false
+        enabledMazeStyles = Set(MazeStyle.allCases)
         newMaze(difficulty: .beginner)
         defaults.removeObject(forKey: Self.difficultyKey)
         isDemoVisible = true
