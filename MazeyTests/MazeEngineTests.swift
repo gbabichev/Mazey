@@ -943,7 +943,7 @@ struct MazeEngineTests {
     // MARK: - Themes and stickers
 
     @Test func everyThemeHasItsOwnStickersAndNoStarShapedScenery() {
-        #expect(MazeTheme.all.count >= 11)
+        #expect(MazeTheme.all.count >= 13)
         let starShapes = ["⭐️", "🌟", "✨", "💫"]
         for theme in MazeTheme.all {
             #expect(theme.stickers.count >= 8, "\(theme.id)")
@@ -955,6 +955,23 @@ struct MazeEngineTests {
             }
         }
         #expect(MazeTheme.all.map(\.playerEmoji).count == Set(MazeTheme.all.map(\.id)).count)
+    }
+
+    @Test func aboutHalfTheThemesAreDark() {
+        let dark = MazeTheme.all.filter(\.isDark)
+        #expect(dark.count * 100 >= MazeTheme.all.count * 40, "dark themes: \(dark.map(\.id))")
+        #expect(dark.count * 100 <= MazeTheme.all.count * 60)
+        #expect(MazeTheme.all.contains { $0.id == "halloween" } && MazeTheme.all.contains { $0.id == "christmas" })
+    }
+
+    @Test func eachThemesTextAndWallsShowUpOnItsOwnPaper() {
+        for theme in MazeTheme.all {
+            #expect(Color.contrastRatio(theme.ink, theme.paper) >= 4.5, "\(theme.id) ink on paper")
+            #expect(Color.contrastRatio(theme.wall, theme.paper) >= 3, "\(theme.id) wall on paper")
+            #expect(Color.contrastRatio(theme.path, theme.paper) >= 1.8, "\(theme.id) route on paper")
+            // Dark themes have a dark floor and light walls; light themes the reverse.
+            #expect((theme.paper.relativeLuminance < 0.25) == theme.isDark, "\(theme.id) paper does not match isDark")
+        }
     }
 
     @Test func everyThemeIsReachedAcrossSeeds() {

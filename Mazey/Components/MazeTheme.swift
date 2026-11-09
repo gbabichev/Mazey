@@ -44,7 +44,7 @@ nonisolated struct MazeTheme: Identifiable, Sendable {
     let finishTint: Color
     /// Color for the main action buttons.
     let accent: Color
-    /// Readable text color on a light card.
+    /// Readable text color on the theme's own maze paper: dark on a light theme, light on a dark one.
     let ink: Color
     /// True when the background is dark, so toolbars switch to light-on-dark.
     let isDark: Bool
@@ -55,6 +55,7 @@ nonisolated extension MazeTheme {
         .space, .dinosaur, .ocean, .farm,
         .unicorn, .vehicles, .robots,
         .spring, .summer, .autumn, .winter,
+        .halloween, .christmas,
     ]
 
     /// The theme for a maze seed. The same seed always gets the same theme, but it is

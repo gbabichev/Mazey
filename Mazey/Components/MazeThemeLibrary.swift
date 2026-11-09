@@ -8,6 +8,7 @@ import SwiftUI
 /// Every theme the app ships with. A theme is just data: add one here and to `MazeTheme.all`,
 /// plus a sound flourish in `SoundSynth`.
 ///
+/// About half are dark (night) themes, with a dark maze floor, light walls and light `ink`.
 /// Scenery emoji avoid star shapes, because the collectible stars are drawn as gold stars.
 nonisolated extension MazeTheme {
     static let space = MazeTheme(
@@ -28,7 +29,7 @@ nonisolated extension MazeTheme {
         startTint: Color(red: 0.35, green: 0.85, blue: 0.55),
         finishTint: Color(red: 1.00, green: 0.55, blue: 0.70),
         accent: Color(red: 1.00, green: 0.55, blue: 0.20),
-        ink: Color(red: 0.20, green: 0.15, blue: 0.50),
+        ink: Color(red: 0.88, green: 0.85, blue: 1.00),
         isDark: true
     )
 
@@ -63,17 +64,17 @@ nonisolated extension MazeTheme {
             Sticker("🐙", "Octopus"), Sticker("🦀", "Crab"), Sticker("🐬", "Dolphin"),
             Sticker("🐳", "Whale"), Sticker("🦈", "Shark"),
         ],
-        backgroundTop: Color(red: 0.65, green: 0.90, blue: 1.00),
-        backgroundBottom: Color(red: 0.30, green: 0.62, blue: 0.90),
-        paper: Color(red: 0.90, green: 0.98, blue: 1.00),
-        wall: Color(red: 0.10, green: 0.35, blue: 0.60),
-        path: Color(red: 0.20, green: 0.75, blue: 0.80),
-        hint: Color(red: 1.00, green: 0.75, blue: 0.20),
-        startTint: Color(red: 0.35, green: 0.80, blue: 0.75),
+        backgroundTop: Color(red: 0.02, green: 0.10, blue: 0.28),
+        backgroundBottom: Color(red: 0.03, green: 0.30, blue: 0.46),
+        paper: Color(red: 0.05, green: 0.17, blue: 0.34),
+        wall: Color(red: 0.55, green: 0.90, blue: 1.00),
+        path: Color(red: 0.30, green: 0.92, blue: 0.78),
+        hint: Color(red: 1.00, green: 0.82, blue: 0.30),
+        startTint: Color(red: 0.30, green: 0.80, blue: 0.70),
         finishTint: Color(red: 1.00, green: 0.65, blue: 0.55),
         accent: Color(red: 1.00, green: 0.50, blue: 0.35),
-        ink: Color(red: 0.08, green: 0.30, blue: 0.55),
-        isDark: false
+        ink: Color(red: 0.86, green: 0.96, blue: 1.00),
+        isDark: true
     )
 
     static let farm = MazeTheme(
@@ -151,17 +152,17 @@ nonisolated extension MazeTheme {
             Sticker("🔧", "Wrench"), Sticker("🔋", "Battery"), Sticker("💡", "Light bulb"),
             Sticker("🦾", "Robot arm"), Sticker("🧲", "Magnet"),
         ],
-        backgroundTop: Color(red: 0.82, green: 0.88, blue: 0.95),
-        backgroundBottom: Color(red: 0.60, green: 0.72, blue: 0.86),
-        paper: Color(red: 0.93, green: 0.96, blue: 0.99),
-        wall: Color(red: 0.25, green: 0.32, blue: 0.45),
-        path: Color(red: 0.10, green: 0.72, blue: 0.90),
-        hint: Color(red: 0.98, green: 0.60, blue: 0.15),
-        startTint: Color(red: 0.45, green: 0.85, blue: 0.62),
-        finishTint: Color(red: 1.00, green: 0.82, blue: 0.35),
-        accent: Color(red: 0.00, green: 0.62, blue: 0.82),
-        ink: Color(red: 0.20, green: 0.30, blue: 0.45),
-        isDark: false
+        backgroundTop: Color(red: 0.07, green: 0.08, blue: 0.16),
+        backgroundBottom: Color(red: 0.13, green: 0.17, blue: 0.30),
+        paper: Color(red: 0.10, green: 0.12, blue: 0.22),
+        wall: Color(red: 0.40, green: 0.85, blue: 0.95),
+        path: Color(red: 0.96, green: 0.36, blue: 0.76),
+        hint: Color(red: 1.00, green: 0.85, blue: 0.25),
+        startTint: Color(red: 0.35, green: 0.90, blue: 0.55),
+        finishTint: Color(red: 1.00, green: 0.80, blue: 0.30),
+        accent: Color(red: 0.00, green: 0.72, blue: 0.92),
+        ink: Color(red: 0.86, green: 0.93, blue: 1.00),
+        isDark: true
     )
 
     static let spring = MazeTheme(
@@ -239,16 +240,60 @@ nonisolated extension MazeTheme {
             Sticker("🎿", "Skis"), Sticker("🛷", "Sled"), Sticker("🧤", "Mittens"),
             Sticker("🐧", "Penguin"), Sticker("🎄", "Tree"),
         ],
-        backgroundTop: Color(red: 0.85, green: 0.93, blue: 1.00),
-        backgroundBottom: Color(red: 0.70, green: 0.82, blue: 0.95),
-        paper: Color(red: 0.97, green: 0.99, blue: 1.00),
-        wall: Color(red: 0.15, green: 0.30, blue: 0.55),
-        path: Color(red: 0.35, green: 0.70, blue: 0.95),
-        hint: Color(red: 0.92, green: 0.30, blue: 0.35),
-        startTint: Color(red: 0.62, green: 0.85, blue: 0.85),
-        finishTint: Color(red: 1.00, green: 0.78, blue: 0.80),
-        accent: Color(red: 0.85, green: 0.25, blue: 0.30),
-        ink: Color(red: 0.15, green: 0.30, blue: 0.55),
-        isDark: false
+        backgroundTop: Color(red: 0.05, green: 0.09, blue: 0.26),
+        backgroundBottom: Color(red: 0.22, green: 0.24, blue: 0.52),
+        paper: Color(red: 0.10, green: 0.15, blue: 0.34),
+        wall: Color(red: 0.80, green: 0.90, blue: 1.00),
+        path: Color(red: 0.45, green: 0.85, blue: 1.00),
+        hint: Color(red: 1.00, green: 0.85, blue: 0.35),
+        startTint: Color(red: 0.45, green: 0.85, blue: 0.85),
+        finishTint: Color(red: 1.00, green: 0.75, blue: 0.85),
+        accent: Color(red: 0.95, green: 0.40, blue: 0.45),
+        ink: Color(red: 0.92, green: 0.96, blue: 1.00),
+        isDark: true
+    )
+
+    static let halloween = MazeTheme(
+        id: "halloween", name: "Halloween",
+        playerEmoji: "👻", startEmoji: "🏚️", finishEmoji: "🎃",
+        decorations: ["🦇", "🕸️", "🎃", "👻", "🕷️", "🌙"],
+        stickers: [
+            Sticker("👻", "Ghost"), Sticker("🎃", "Jack-o'-lantern"), Sticker("🦇", "Bat"),
+            Sticker("🕷️", "Spider"), Sticker("🧙", "Witch"), Sticker("🍬", "Candy"),
+            Sticker("🌙", "Moon"), Sticker("🐈‍⬛", "Black cat"),
+        ],
+        backgroundTop: Color(red: 0.09, green: 0.04, blue: 0.17),
+        backgroundBottom: Color(red: 0.34, green: 0.13, blue: 0.06),
+        paper: Color(red: 0.17, green: 0.10, blue: 0.25),
+        wall: Color(red: 1.00, green: 0.62, blue: 0.22),
+        path: Color(red: 0.55, green: 0.88, blue: 0.35),
+        hint: Color(red: 1.00, green: 0.90, blue: 0.40),
+        startTint: Color(red: 0.45, green: 0.80, blue: 0.40),
+        finishTint: Color(red: 1.00, green: 0.60, blue: 0.20),
+        accent: Color(red: 1.00, green: 0.55, blue: 0.10),
+        ink: Color(red: 0.98, green: 0.88, blue: 1.00),
+        isDark: true
+    )
+
+    static let christmas = MazeTheme(
+        id: "christmas", name: "Christmas",
+        playerEmoji: "🎅", startEmoji: "🏠", finishEmoji: "🎄",
+        decorations: ["🎄", "🎁", "🔔", "🦌", "⛄", "🕯️"],
+        stickers: [
+            Sticker("🎅", "Santa"), Sticker("🎄", "Christmas tree"), Sticker("🎁", "Present"),
+            Sticker("🔔", "Bell"), Sticker("🦌", "Reindeer"), Sticker("🧦", "Stocking"),
+            Sticker("🍪", "Cookie"), Sticker("🕯️", "Candle"),
+        ],
+        backgroundTop: Color(red: 0.03, green: 0.16, blue: 0.14),
+        backgroundBottom: Color(red: 0.32, green: 0.07, blue: 0.10),
+        paper: Color(red: 0.08, green: 0.22, blue: 0.18),
+        wall: Color(red: 0.97, green: 0.86, blue: 0.55),
+        path: Color(red: 0.95, green: 0.30, blue: 0.30),
+        hint: Color(red: 0.45, green: 0.92, blue: 0.55),
+        startTint: Color(red: 0.45, green: 0.85, blue: 0.55),
+        finishTint: Color(red: 1.00, green: 0.60, blue: 0.60),
+        accent: Color(red: 0.90, green: 0.20, blue: 0.25),
+        ink: Color(red: 1.00, green: 0.95, blue: 0.85),
+        isDark: true
     )
 }

@@ -186,6 +186,22 @@ nonisolated enum SoundSynth {
             return (0..<6).map { index in
                 Note(frequency: 2400 + Double(index % 3) * 300, start: Double(index) * 0.07, duration: 0.3, gain: 0.22, timbre: .bell)
             }
+        case "halloween":
+            // A creaking door, then two low spooky bells.
+            return [
+                Note(frequency: 220, start: 0, duration: 0.4, gain: 0.25, timbre: .buzz, endFrequency: 140),
+                Note(frequency: 0, start: 0, duration: 0.4, gain: 0.1, timbre: .noise),
+                Note(frequency: frequency(semitonesAboveC5: -5), start: 0.4, duration: 0.5, gain: 0.35, timbre: .bell),
+                Note(frequency: frequency(semitonesAboveC5: -11), start: 0.55, duration: 0.55, gain: 0.35, timbre: .bell),
+            ]
+        case "christmas":
+            // A cheerful chime arpeggio with a shimmer on top.
+            var notes = [0.0, 4, 7, 12, 16].enumerated().map { index, semitones in
+                Note(frequency: frequency(semitonesAboveC5: semitones), start: Double(index) * 0.1, duration: 0.4, gain: 0.3, timbre: .bell)
+            }
+            notes.append(Note(frequency: frequency(semitonesAboveC5: 28), start: 0.5, duration: 0.5, gain: 0.2, timbre: .bell))
+            notes.append(Note(frequency: frequency(semitonesAboveC5: 24), start: 0.58, duration: 0.5, gain: 0.18, timbre: .bell))
+            return notes
         default:
             return [
                 Note(frequency: frequency(semitonesAboveC5: 12), start: 0, duration: 0.3, gain: 0.35, timbre: .bell),
